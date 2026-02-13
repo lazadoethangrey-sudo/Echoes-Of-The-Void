@@ -1,4 +1,5 @@
 
+/// <reference lib="dom" />
 import React, { useState, useEffect, useRef } from 'react';
 import { CSSTransition, TransitionGroup } from 'react-transition-group';
 import TitleScreen from './components/TitleScreen';
@@ -248,19 +249,13 @@ const App: React.FC = () => {
   };
 
   const selectStage = (stage: Stage) => {
-    if (gameState.currentEnergy <= 0) {
-      alert("Insufficient energy to initiate combat! Replenish your energy to proceed.");
-      soundService.play('DEFEAT'); // Play a negative sound for feedback
-      return;
-    }
-
     soundService.play('CLICK');
     setGameState(prev => ({ 
       ...prev, 
       currentStage: stage, 
       screen: GameScreen.STORY_INTRO, 
       storyDialogue: [{ speaker: "NARRATOR", text: stage.loreNote }],
-      currentEnergy: prev.currentEnergy - 1 // Consume 1 energy
+      // Energy consumption moved to handleDeployToBattle
     }));
     setIsNarrating(true);
     let dialogueAccumulator = "";
@@ -272,6 +267,30 @@ const App: React.FC = () => {
       });
       setGameState(prev => ({ ...prev, storyDialogue: [{ speaker: "NARRATOR", text: stage.loreNote }, ...lines] }));
     }).finally(() => { setIsNarrating(false); });
+  };
+
+  const handleDeployToBattle = () => {
+    if (!gameState.currentStage) return;
+
+    if (gameState.currentEnergy <= 0) {
+      alert("Insufficient energy to initiate combat! Replenish your energy to proceed.");
+      soundService.play('DEFEAT');
+      return;
+    }
+
+    soundService.play('CLICK');
+    setGameState(prev => {
+      let attemptedStages = prev.attemptedStages;
+      if (prev.currentStage && !attemptedStages.includes(prev.currentStage.id)) {
+        attemptedStages = [...attemptedStages, prev.currentStage.id];
+      }
+      return {
+        ...prev,
+        screen: GameScreen.BATTLE,
+        currentEnergy: prev.currentEnergy - 1, // Consume 1 energy here
+        attemptedStages
+      };
+    });
   };
 
   const replenishEnergy = () => {
@@ -355,7 +374,7 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      {showSaveIndicator && gameState.screen !== GameScreen.TITLE && gameState.screen !== GameScreen.LORE_INTRO && (
+      {showSaveIndicator && gameState.screen !== GameScreen.LORE_INTRO && gameState.screen !== GameScreen.TITLE && (
         <div className="fixed top-4 right-4 z-[200] flex items-center gap-2 bg-slate-900/80 border border-violet-500/30 px-3 py-1.5 rounded-full backdrop-blur-md animate-in slide-in-from-top-4 fade-in duration-500">
            <i className="fas fa-circle-nodes text-violet-400 text-[10px] animate-spin"></i>
            <span className="text-[8px] font-black font-cinzel text-white uppercase tracking-widest">Timeline Secured</span>
@@ -429,7 +448,7 @@ const App: React.FC = () => {
                   dialogue={gameState.storyDialogue} 
                   isNarrating={isNarrating} 
                   isAttempted={gameState.attemptedStages.includes(gameState.currentStage.id)}
-                  onDeploy={() => navigateTo(GameScreen.BATTLE)} 
+                  onDeploy={handleDeployToBattle} 
                   onBack={() => navigateTo(GameScreen.MAP)} 
                   currentEnergy={gameState.currentEnergy}
                 />
