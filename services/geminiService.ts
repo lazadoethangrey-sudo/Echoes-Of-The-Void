@@ -50,7 +50,7 @@ export const getStageDialogueStream = async (
   ];
 
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
     
     const responseStream = await retryWithBackoff(async () => {
       return await ai.models.generateContentStream({
