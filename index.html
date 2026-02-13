@@ -8,7 +8,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Inter:wght@300;400;600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Inter:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap');
     
     body {
       margin: 0;
@@ -21,44 +21,40 @@
       -webkit-tap-highlight-color: transparent;
     }
 
-    /* Only show virtual cursor on non-touch devices or when moving mouse */
+    /* Only show virtual cursor on non-touch devices */
     @media (pointer: coarse) {
-      .virtual-cursor {
-        display: none !important;
-      }
-      body {
-        cursor: auto !important;
-      }
-      #root * {
-        cursor: auto !important;
-      }
+      .virtual-cursor { display: none !important; }
+      body { cursor: auto !important; }
+      #root * { cursor: auto !important; }
     }
 
     @media (pointer: fine) {
-      body {
-        cursor: none !important;
-      }
-      #root * {
-        cursor: none !important;
-      }
+      body { cursor: none !important; }
+      #root * { cursor: none !important; }
     }
 
-    .font-cinzel {
-      font-family: 'Cinzel', serif;
-    }
+    .font-cinzel { font-family: 'Cinzel', serif; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
 
     .glass {
       background: rgba(15, 23, 42, 0.7);
-      backdrop-filter: blur(12px);
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
     }
 
     .text-glow {
-      text-shadow: 0 0 10px rgba(139, 92, 246, 0.5), 0 0 20px rgba(139, 92, 246, 0.3);
+      text-shadow: 0 0 15px rgba(139, 92, 246, 0.6), 0 0 30px rgba(139, 92, 246, 0.4);
     }
 
-    .animate-float {
-      animation: float 6s ease-in-out infinite;
+    .void-flux {
+      background: radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.05) 0%, transparent 70%);
+      animation: flux 15s ease-in-out infinite alternate;
+    }
+
+    @keyframes flux {
+      0% { transform: scale(1) translate(0, 0); }
+      100% { transform: scale(1.2) translate(20px, 10px); }
     }
 
     @keyframes float {
@@ -66,50 +62,25 @@
       50% { transform: translateY(-20px); }
     }
 
-    @keyframes capsule-shake {
-      0%, 100% { transform: rotate(0deg); }
-      25% { transform: rotate(-2deg); }
-      75% { transform: rotate(2deg); }
-    }
-    .capsule-shake {
-      animation: capsule-shake 0.3s infinite ease-in-out;
-    }
-
-    @keyframes rarity-pop {
-      0% { transform: scale(0.5); opacity: 0; filter: blur(10px); }
-      50% { transform: scale(1.2); opacity: 1; filter: blur(0px); }
-      100% { transform: scale(1); opacity: 1; }
-    }
-    .rarity-splash {
-      animation: rarity-pop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-    }
-
-    .prismatic-glow {
-      background: linear-gradient(90deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #8f00ff);
-      background-size: 400% 400%;
-      animation: prismatic 3s linear infinite;
-    }
-    @keyframes prismatic {
-      0% { background-position: 0% 50%; }
-      50% { background-position: 100% 50%; }
-      100% { background-position: 0% 50%; }
+    .animate-float {
+      animation: float 6s ease-in-out infinite;
     }
 
     .scanline {
       width: 100%;
-      height: 2px;
-      background: rgba(139, 92, 246, 0.1);
+      height: 3px;
+      background: linear-gradient(to bottom, rgba(139, 92, 246, 0.1), transparent);
       position: absolute;
       top: 0;
       left: 0;
       z-index: 50;
       pointer-events: none;
-      animation: scanline 8s linear infinite;
+      animation: scanline 6s linear infinite;
     }
 
     @keyframes scanline {
-      0% { top: 0; }
-      100% { top: 100%; }
+      0% { transform: translateY(0); }
+      100% { transform: translateY(100vh); }
     }
 
     .damage-popup {
@@ -117,49 +88,41 @@
       pointer-events: none;
       font-weight: 900;
       font-family: 'Cinzel', serif;
-      font-size: 1.5rem;
-      color: #ef4444;
-      text-shadow: 0 0 10px rgba(0,0,0,0.8);
-      animation: float-up 1s forwards ease-out;
       z-index: 100;
+      animation: pop-up 1.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
     }
 
-    @keyframes float-up {
-      0% { transform: translateY(0) scale(0.5); opacity: 0; }
-      20% { transform: translateY(-20px) scale(1.2); opacity: 1; }
-      100% { transform: translateY(-60px) scale(1); opacity: 0; }
+    @keyframes pop-up {
+      0% { transform: translateY(0) scale(0.5); opacity: 0; filter: blur(4px); }
+      20% { transform: translateY(-30px) scale(1.4); opacity: 1; filter: blur(0); }
+      100% { transform: translateY(-80px) scale(1); opacity: 0; }
     }
 
-    .custom-scrollbar::-webkit-scrollbar {
-      width: 4px;
-    }
-    .custom-scrollbar::-webkit-scrollbar-track {
-      background: rgba(0,0,0,0.1);
-    }
+    .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
     .custom-scrollbar::-webkit-scrollbar-thumb {
-      background: rgba(139, 92, 246, 0.3);
+      background: rgba(139, 92, 246, 0.4);
       border-radius: 10px;
-    }
-
-    .no-scrollbar::-webkit-scrollbar {
-      display: none;
+      border: 2px solid transparent;
+      background-clip: padding-box;
     }
 
     .virtual-cursor {
       position: fixed;
-      width: 32px;
-      height: 32px;
+      width: 36px;
+      height: 36px;
       pointer-events: none;
       z-index: 9999;
       transform: translate(-50%, -50%);
+      transition: width 0.2s, height 0.2s;
     }
 
-    /* Mobile specific spacing fixes */
-    @media (max-width: 768px) {
-      .mobile-padding { padding: 1rem; }
-      .mobile-text-sm { font-size: 0.75rem; }
-      .mobile-hide { display: none; }
+    .active-interact .virtual-cursor {
+      width: 48px;
+      height: 48px;
     }
+
+    .no-scrollbar::-webkit-scrollbar { display: none; }
   </style>
 <script type="importmap">
 {
@@ -173,7 +136,7 @@
 }
 </script>
 </head>
-<body>
+<body class="bg-slate-950">
   <div id="root"></div>
 </body>
 </html>

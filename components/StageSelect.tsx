@@ -1,6 +1,7 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Stage, Trait } from '../types';
+import { soundService } from '../services/soundService';
 
 interface StageSelectProps {
   stages: Stage[];
@@ -10,43 +11,13 @@ interface StageSelectProps {
 }
 
 const StageSelect: React.FC<StageSelectProps> = ({ stages, onSelectStage, onBackToTitle, shards }) => {
-  const [activeChapter, setActiveChapter] = useState(1);
-  const [rightClickedStage, setRightClickedStage] = useState<Stage | null>(null);
+  const [activeChapter] = useState(1);
+  const [hoveredStage, setHoveredStage] = useState<Stage | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setIsLoaded(true);
   }, []);
-
-  const chapters = Array.from({ length: 10 }, (_, i) => {
-    const id = i + 1;
-    let name = "Void Frontier";
-    let color = "border-slate-500";
-    let text = "text-slate-400";
-    
-    if (id === 1) { name = "Fallen Sanctuary"; color = "border-violet-500"; text = "text-violet-400"; }
-    else if (id === 2) { name = "Crimson Wastes"; color = "border-red-500"; text = "text-red-400"; }
-    else if (id === 3) { name = "Aether Heights"; color = "border-blue-500"; text = "text-blue-400"; }
-    else if (id === 4) { name = "Steel Bastion"; color = "border-slate-500"; text = "text-slate-400"; }
-    else if (id === 5) { name = "Nebula Reach"; color = "border-purple-500"; text = "text-purple-400"; }
-    else if (id === 6) { name = "Obsidian Field"; color = "border-red-600"; text = "text-red-500"; }
-    else if (id === 7) { name = "Cloud Spire"; color = "border-sky-500"; text = "text-sky-400"; }
-    else if (id === 8) { name = "Clockwork Maze"; color = "border-amber-700"; text = "text-amber-600"; }
-    else if (id === 9) { name = "Pulsar Plains"; color = "border-pink-500"; text = "text-pink-400"; }
-    else if (id === 10) { name = "Void Cathedral"; color = "border-indigo-500"; text = "text-indigo-400"; }
-
-    return { id, name, color, text };
-  });
-
-  const filteredStages = stages.filter(s => s.chapterId === activeChapter);
-  
-  const isChapterUnlocked = (id: number) => {
-    if (id === 1) return true;
-    const prevBossId = (id - 1) * 10;
-    const prevBoss = stages.find(s => s.id === prevBossId);
-    return prevBoss?.completed || false;
-  };
 
   const getTraitColor = (trait: Trait) => {
     switch(trait) {
@@ -54,103 +25,129 @@ const StageSelect: React.FC<StageSelectProps> = ({ stages, onSelectStage, onBack
         case 'AETHER': return 'text-blue-400';
         case 'STEEL': return 'text-slate-400';
         case 'NEBULA': return 'text-purple-400';
-        case 'BEHEMOTH': return 'text-orange-500';
         case 'VOID': return 'text-violet-500';
         default: return 'text-white';
     }
   };
 
-  return (
-    <div className={`w-full h-screen bg-slate-950 p-4 md:p-8 flex flex-col items-center overflow-hidden transition-opacity duration-1000 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}>
-      {rightClickedStage && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-300" onClick={() => setRightClickedStage(null)}>
-          <div className="max-w-md w-full glass p-8 rounded-3xl border-slate-700 relative overflow-hidden animate-in zoom-in duration-300" onClick={(e) => e.stopPropagation()}>
-            <div className="absolute top-0 left-0 w-full h-1 bg-violet-600"></div>
-            <h3 className="text-xl font-cinzel text-white mb-1 uppercase font-black">{rightClickedStage.name} Intel</h3>
-            {!rightClickedStage.completed ? <div className="py-12 text-center text-slate-500 italic">Clear zone to decode enemy signatures.</div> : (
-              <div className="space-y-4 mt-4">
-                 {rightClickedStage.waves.flat().map((enemy, idx) => (
-                    <div key={idx} className="bg-slate-900/50 p-4 rounded-xl border border-slate-800 flex items-center gap-4">
-                       <img src={enemy.sprite} className="w-12 h-12 rounded-lg border border-slate-700 object-cover" />
-                       <div className="flex-1">
-                          <div className="flex justify-between items-center"><span className="text-xs font-bold text-white truncate w-32">{enemy.name}</span><span className={`text-[8px] font-black uppercase tracking-tighter ${getTraitColor(enemy.trait)}`}>{enemy.trait}</span></div>
-                          <div className="grid grid-cols-2 gap-2 mt-2 text-[9px] text-slate-400 font-mono">
-                             <div>HP: {enemy.maxHp.toLocaleString()}</div><div>ATK: {enemy.attack.toLocaleString()}</div>
-                          </div>
-                       </div>
-                    </div>
-                 ))}
-              </div>
-            )}
-            <button onClick={() => setRightClickedStage(null)} className="mt-8 w-full py-3 border border-slate-700 text-slate-500 hover:text-white font-black font-cinzel rounded-xl transition-all text-xs active:scale-95">CLOSE INTEL</button>
-          </div>
-        </div>
-      )}
+  const filteredStages = stages.filter(s => s.chapterId === activeChapter);
 
-      <div className="max-w-7xl w-full h-full flex flex-col">
-        <header className="mb-6 flex flex-col gap-4 flex-shrink-0">
-          <div className="flex justify-between items-start w-full">
-            <div className="flex items-center gap-6">
-              <button onClick={onBackToTitle} className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500 hover:text-white hover:border-violet-500 transition-all active:scale-90"><i className="fas fa-arrow-left text-sm"></i></button>
-              <div>
-                <h2 className="text-2xl md:text-4xl font-black font-cinzel text-violet-400 text-glow uppercase tracking-widest leading-none">The Void Map</h2>
-                <p className="text-slate-600 font-cinzel text-[8px] uppercase tracking-widest mt-1">Select an active zone for deployment</p>
-              </div>
-            </div>
-            <div className="glass px-6 py-2 rounded-xl border-violet-500/20 flex items-center gap-4">
-              <div className="flex flex-col items-end"><span className="text-[7px] font-black text-slate-500 uppercase">Essence</span><span className="font-mono text-xl font-bold text-white tracking-tight">{shards.toLocaleString()}</span></div>
-              <i className="fas fa-gem text-violet-400 text-sm animate-pulse"></i>
+  return (
+    <div className={`w-full h-screen bg-[#020617] p-6 md:p-10 flex flex-col items-center overflow-hidden transition-opacity duration-1000 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}>
+      
+      <div className="max-w-7xl w-full h-full flex flex-col relative">
+        <header className="mb-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 flex-shrink-0 animate-in slide-in-from-top-6 duration-700">
+          <div className="flex items-center gap-6">
+            <button 
+              onClick={onBackToTitle} 
+              className="w-12 h-12 rounded-2xl bg-slate-900/80 border border-slate-800 flex items-center justify-center text-slate-500 hover:text-white hover:border-violet-500/50 hover:bg-violet-950/20 transition-all active:scale-90 shadow-lg"
+            >
+              <i className="fas fa-chevron-left"></i>
+            </button>
+            <div>
+              <h2 className="text-3xl md:text-5xl font-black font-cinzel text-violet-400 text-glow uppercase tracking-[0.2em] leading-none">Sector Archive</h2>
+              <p className="text-slate-600 font-mono text-[9px] uppercase tracking-[0.4em] mt-2">Active Deployment // Chapter 01</p>
             </div>
           </div>
           
-          <div className="flex items-center w-full bg-slate-900/40 p-1.5 rounded-xl border border-slate-800/60 overflow-hidden">
-            <div className="flex gap-2 overflow-x-auto no-scrollbar px-2 py-1 cursor-grab active:cursor-grabbing" ref={scrollRef}>
-              {chapters.map(ch => {
-                const unlocked = isChapterUnlocked(ch.id);
-                return (
-                  <button key={ch.id} onClick={() => unlocked && setActiveChapter(ch.id)} className={`px-4 py-2 rounded-lg font-cinzel text-[9px] font-black tracking-widest border-2 transition-all flex-shrink-0 ${activeChapter === ch.id ? `${ch.color} ${ch.text} bg-slate-950 scale-105 shadow-lg` : unlocked ? 'border-slate-800 text-slate-600 hover:border-slate-600' : 'border-slate-900 text-slate-800 cursor-not-allowed opacity-40'}`}>
-                    CH {ch.id}: {ch.name}
-                  </button>
-                );
-              })}
+          <div className="flex gap-4">
+            <div className="glass px-8 py-3 rounded-2xl border-violet-500/20 flex items-center gap-5 shadow-[0_0_30px_rgba(139,92,246,0.1)]">
+              <div className="flex flex-col items-end">
+                <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest font-mono">Void Essence</span>
+                <span className="font-mono text-2xl font-bold text-white tracking-tight">{shards.toLocaleString()}</span>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-violet-600/20 flex items-center justify-center border border-violet-500/30">
+                <i className="fas fa-gem text-violet-400 text-lg animate-pulse"></i>
+              </div>
             </div>
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar pb-8">
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="flex-1 overflow-y-auto pr-3 custom-scrollbar pb-12">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
             {filteredStages.map((stage) => {
               const isSelectable = stage.unlocked;
+              const isHovered = hoveredStage?.id === stage.id;
+              
               return (
-                <div key={stage.id} onContextMenu={(e) => { e.preventDefault(); setRightClickedStage(stage); }} onClick={() => isSelectable && onSelectStage(stage)} className={`group relative rounded-xl border-2 transition-all duration-300 flex flex-col h-64 overflow-hidden ${isSelectable ? 'cursor-pointer border-slate-800 hover:border-violet-500 bg-slate-900/40' : 'border-slate-900 bg-slate-950 opacity-30'}`}>
-                  <div className="h-24 relative overflow-hidden">
-                    <img src={`https://picsum.photos/seed/void-st${stage.id}/400/200`} className={`w-full h-full object-cover transition-all group-hover:scale-110 ${!isSelectable ? 'grayscale' : ''}`} />
-                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900 to-transparent"></div>
-                    {stage.isBoss && <div className="absolute top-2 right-2 bg-red-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded shadow-lg">BOSS</div>}
+                <div 
+                  key={stage.id} 
+                  onMouseEnter={() => isSelectable && setHoveredStage(stage)}
+                  onMouseLeave={() => setHoveredStage(null)}
+                  onClick={() => isSelectable && onSelectStage(stage)}
+                  className={`group relative rounded-[2rem] border-2 transition-all duration-500 flex flex-col h-80 overflow-hidden shadow-2xl ${isSelectable ? 'cursor-pointer border-slate-800 hover:border-violet-500/50 bg-slate-900/40' : 'border-slate-900/50 bg-black opacity-20'}`}
+                >
+                  {/* Visual Background */}
+                  <div className="h-32 relative overflow-hidden flex-shrink-0">
+                    <img 
+                      src={`https://picsum.photos/seed/void-s${stage.id}/400/300`} 
+                      className={`w-full h-full object-cover transition-all duration-[2s] group-hover:scale-110 ${!isSelectable ? 'grayscale' : ''}`} 
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-transparent"></div>
+                    
+                    {stage.completed && (
+                      <div className="absolute top-4 left-4 w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center text-slate-950 text-[10px] shadow-lg">
+                        <i className="fas fa-check"></i>
+                      </div>
+                    )}
+
+                    {stage.isBoss && (
+                      <div className="absolute top-4 right-4 bg-red-600 text-white text-[8px] font-black px-2 py-1 rounded-lg shadow-[0_0_15px_rgba(239,68,68,0.5)] uppercase tracking-widest animate-pulse font-mono">
+                        Boss Core
+                      </div>
+                    )}
                   </div>
-                  <div className="p-3 flex flex-col flex-1">
-                    <div className="flex justify-between items-center mb-1"><span className={`text-[7px] font-black tracking-tighter ${getTraitColor(stage.waves[0][0].trait)}`}>{stage.waves[0][0].trait}</span>{stage.completed && <i className="fas fa-check text-emerald-500 text-[8px]"></i>}</div>
-                    <h3 className="font-cinzel text-xs font-bold text-white mb-1 group-hover:text-violet-400 transition-colors">{stage.name}</h3>
-                    <p className="text-[9px] text-slate-500 line-clamp-2 leading-relaxed italic">{stage.description}</p>
+
+                  <div className="p-5 flex flex-col flex-1 relative">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className={`text-[9px] font-black tracking-[0.2em] font-mono ${getTraitColor(stage.waves[0][0].trait)}`}>
+                        {stage.waves[0][0].trait}
+                      </span>
+                      <span className="text-[8px] font-mono text-slate-500">Z-ID: {stage.id.toString().padStart(2, '0')}</span>
+                    </div>
+
+                    <h3 className="font-cinzel text-lg font-black text-white mb-2 group-hover:text-violet-400 transition-colors uppercase leading-tight truncate">
+                      {stage.name}
+                    </h3>
+
+                    <p className="text-[10px] text-slate-500 line-clamp-2 leading-relaxed italic mb-4 font-cinzel">
+                      {stage.description}
+                    </p>
+
                     {isSelectable && (
-                        <div className="mt-auto flex justify-between items-center pt-2 border-t border-slate-800">
-                           <span className="text-[7px] font-mono text-slate-400">CH {stage.chapterId} - ZONE {stage.id % 10 || 10}</span>
-                           <i className="fas fa-play-circle text-violet-500 text-sm group-hover:scale-125 transition-transform"></i>
+                        <div className="mt-auto flex flex-col gap-3 pt-3 border-t border-slate-800/50">
+                           <div className="flex justify-between items-center text-[8px] font-black uppercase text-slate-600 tracking-widest">
+                             <span>Rewards</span>
+                             <div className="flex gap-2 text-violet-400 font-mono">
+                               <span>{stage.shardReward} S</span>
+                               <span>{stage.expReward} E</span>
+                             </div>
+                           </div>
+                           <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden">
+                              <div className="h-full bg-violet-600/30 group-hover:bg-violet-500 transition-all duration-700" style={{ width: isHovered ? '100%' : '0%' }}></div>
+                           </div>
                         </div>
                     )}
                   </div>
+                  
+                  {/* Locked Overlay */}
+                  {!isSelectable && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-[2px] z-10 pointer-events-none">
+                       <i className="fas fa-lock text-slate-800 text-3xl"></i>
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
         </div>
 
-        <div className="mt-4 p-4 glass rounded-xl border-slate-800 flex justify-between items-center text-[8px] text-slate-500 font-bold uppercase tracking-widest animate-in slide-in-from-bottom-2">
-           <div className="flex items-center gap-6">
-              <span className="flex items-center gap-2"><div className="w-2 h-2 bg-violet-600 rounded-full"></div>Sanctuary Intel</span>
-              <span className="flex items-center gap-2"><div className="w-2 h-2 bg-emerald-500 rounded-full"></div>{stages.filter(s => s.completed).length} Stages Cleared</span>
+        <div className="mt-6 p-6 glass rounded-[2rem] border-slate-800/50 flex justify-between items-center text-[10px] text-slate-500 font-black uppercase tracking-[0.3em] font-mono animate-in slide-in-from-bottom-6">
+           <div className="flex items-center gap-10">
+              <span className="flex items-center gap-3"><div className="w-2.5 h-2.5 bg-violet-600 rounded-full shadow-[0_0_8px_#8b5cf6]"></div>Expedition Active</span>
+              <span className="flex items-center gap-3"><div className="w-2.5 h-2.5 bg-emerald-500 rounded-full shadow-[0_0_8px_#10b981]"></div>{stages.filter(s => s.completed).length} Signatures Decoded</span>
            </div>
-           <div className="italic text-slate-700">Drag chapter bar to scroll // Right-click zones for info</div>
+           <div className="hidden lg:block italic text-slate-700">Recommended Trait resistance listed per sector</div>
         </div>
       </div>
     </div>
