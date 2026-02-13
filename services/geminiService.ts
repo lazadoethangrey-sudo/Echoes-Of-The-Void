@@ -48,7 +48,7 @@ export const getStageDialogueStream = async (
     "Lyra: I can feel the data stream rippling. Something is close.",
     "Jax: Load the cannons. If it bleeds data, we can kill it."
   ];
-
+  
   try {
     const ai = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
     
