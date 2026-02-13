@@ -1,4 +1,5 @@
 
+
 import React, { useMemo } from 'react';
 import { Stage, DialogueLine, Unit, Trait } from '../types';
 
@@ -9,9 +10,10 @@ interface StoryIntroProps {
   isAttempted: boolean;
   onDeploy: () => void;
   onBack: () => void;
+  currentEnergy: number; // New: current energy for display/check
 }
 
-const StoryIntro: React.FC<StoryIntroProps> = ({ stage, dialogue, isNarrating, isAttempted, onDeploy, onBack }) => {
+const StoryIntro: React.FC<StoryIntroProps> = ({ stage, dialogue, isNarrating, isAttempted, onDeploy, onBack, currentEnergy }) => {
   const getAvatar = (name: string) => {
     const n = name.toLowerCase();
     if (n.includes('kaelen')) return 'https://picsum.photos/seed/hero1/200/200';
@@ -124,9 +126,10 @@ const StoryIntro: React.FC<StoryIntroProps> = ({ stage, dialogue, isNarrating, i
           <div className="flex flex-col items-center gap-4 md:gap-6 mt-8 md:mt-10">
             <button 
               onClick={onDeploy} 
-              className="w-full md:w-auto px-12 md:px-24 py-4 md:py-6 bg-white text-slate-950 font-black font-cinzel tracking-[0.2em] md:tracking-[0.4em] rounded-xl md:rounded-[2rem] hover:bg-violet-600 hover:text-white transition-all shadow-[0_0_50px_rgba(255,255,255,0.2)] hover:shadow-[0_0_60px_rgba(139,92,246,0.5)] active:scale-95 text-lg md:text-xl uppercase"
+              disabled={currentEnergy <= 0} // Disable if no energy
+              className="w-full md:w-auto px-12 md:px-24 py-4 md:py-6 bg-white text-slate-950 font-black font-cinzel tracking-[0.2em] md:tracking-[0.4em] rounded-xl md:rounded-[2rem] hover:bg-violet-600 hover:text-white transition-all shadow-[0_0_50px_rgba(255,255,255,0.2)] hover:shadow-[0_0_60px_rgba(139,92,246,0.5)] active:scale-95 text-lg md:text-xl uppercase disabled:opacity-30 disabled:cursor-not-allowed"
             >
-              Initiate Combat
+              Initiate Combat ({currentEnergy > 0 ? '1 Energy' : '0 Energy'})
             </button>
             <button 
               onClick={onBack}

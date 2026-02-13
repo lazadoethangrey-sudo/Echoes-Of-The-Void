@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Unit, Skill, Trait, GameSettings, MinigameType } from '../types';
 import { soundService } from '../services/soundService';
@@ -10,6 +11,8 @@ interface DamageEvent {
   value: number;
   unitId: string;
   isCrit?: boolean;
+  offsetX: number; // For distinct popup positions
+  offsetY: number;
 }
 
 interface BattleSceneProps {
@@ -61,7 +64,9 @@ const BattleScene: React.FC<BattleSceneProps> = ({ heroes, waves, onVictory, onD
   const addDamagePopup = (unitId: string, value: number, isCrit = false) => {
     const id = ++eventIdCounter.current;
     // Offset each popup slightly for visibility
-    setDamageEvents(prev => [...prev, { id, unitId, value, isCrit }]);
+    const offsetX = Math.random() * 40 - 20; // -20 to 20px
+    const offsetY = Math.random() * 20 - 10; // -10 to 10px
+    setDamageEvents(prev => [...prev, { id, unitId, value, isCrit, offsetX, offsetY }]);
     setTimeout(() => {
       setDamageEvents(prev => prev.filter(e => e.id !== id));
     }, 1200);
@@ -106,7 +111,7 @@ const BattleScene: React.FC<BattleSceneProps> = ({ heroes, waves, onVictory, onD
 
     const isHeal = skill.type === 'HEAL';
     let powerMult = (skill.power / 10) * multiplier;
-    if (strengthBuffDuration > 0) powerMult *= 2.5; 
+    if (strengthBuffDuration > 0) powerMult *= 3.0; // Reverted strength buff (was 2.5)
 
     // Smooth movement anticipation
     await new Promise(r => setTimeout(r, 150)); 
@@ -117,7 +122,7 @@ const BattleScene: React.FC<BattleSceneProps> = ({ heroes, waves, onVictory, onD
       setCurrentHeroes(prev => prev.map(h => h.id === target.id ? { ...h, hp: Math.min(h.maxHp, h.hp + healAmt) } : h));
       addDamagePopup(target.id, -healAmt);
     } else {
-      const damage = Math.max(1, Math.floor((activeHero.attack * powerMult) - (target.defense * 0.5))); // Defense is less effective for enemies now
+      const damage = Math.max(1, Math.floor((activeHero.attack * powerMult) - target.defense)); // Reverted defense effectiveness (was 0.5)
       soundService.play('SLASH');
       setHitUnitId(target.id);
       addDamagePopup(target.id, damage, isCrit(multiplier));
@@ -139,11 +144,11 @@ const BattleScene: React.FC<BattleSceneProps> = ({ heroes, waves, onVictory, onD
     if (strengthBuffDuration > 0) setStrengthBuffDuration(prev => prev - 1);
   };
 
-  const isCrit = (multiplier: number) => multiplier > 1.2 || Math.random() > 0.85;
+  const isCrit = (multiplier: number) => multiplier > 1.2 || Math.random() > 0.9; // NERFED: Lowered player crit chance (was 0.85)
 
   const handleActionClick = (skill: Skill, target: Unit) => {
-    // Minigames are now only triggered if the player is doing well or explicitly hits a low chance
-    if (Math.random() < 0.15) { 
+    // BUFFED: Increased minigame frequency (was 0.15)
+    if (Math.random() < 0.25) { 
       setPendingAction({ skill, target });
       const types: MinigameType[] = ['WIRES', 'DECRYPT', 'PURGE', 'RHYTHM', 'BALANCE', 'LINK', 'MATCH', 'DODGE'];
       setActiveMinigame(types[Math.floor(Math.random() * types.length)]);
@@ -153,16 +158,29 @@ const BattleScene: React.FC<BattleSceneProps> = ({ heroes, waves, onVictory, onD
   };
 
   const onMinigameFinish = (success: boolean) => {
-    if (pendingAction) {
-      if (success) {
-        const bonusDamage = Math.floor(pendingAction.target.maxHp * 0.25); // Buffed reward
-        addDamagePopup(pendingAction.target.id, bonusDamage, true);
-        triggerShake('heavy');
-        setCurrentEnemies(prev => prev.map(e => e.id === pendingAction.target.id ? { ...e, hp: Math.max(0, e.hp - bonusDamage) } : e));
-      }
-      useSkill(pendingAction.skill, pendingAction.target, success ? 2.5 : 1.0); // No penalty for failing now
-      setPendingAction(null);
+    if (!pendingAction || !activeHero) return;
+
+    if (success) {
+      const bonusDamage = Math.floor(pendingAction.target.maxHp * 0.2); // NERFED: Minigame bonus damage (was 0.25)
+      addDamagePopup(pendingAction.target.id, bonusDamage, true);
+      triggerShake('heavy');
+      setCurrentEnemies(prev => prev.map(e => e.id === pendingAction.target.id ? { ...e, hp: Math.max(0, e.hp - bonusDamage) } : e));
+      useSkill(pendingAction.skill, pendingAction.target, 3.0); // Success multiplier
+    } else {
+      // Minigame failed: active hero takes damage
+      soundService.play('DEFEAT'); // Negative feedback sound
+      const heroDamage = Math.floor(activeHero.maxHp * 0.20); // 20% of hero's max HP
+      addDamagePopup(activeHero.id, heroDamage);
+      triggerShake('heavy');
+      setCurrentHeroes(prev => {
+        const next = prev.map(h => h.id === activeHero.id ? { ...h, hp: Math.max(0, h.hp - heroDamage) } : h);
+        checkEndState(next, currentEnemies); // Check if hero defeat
+        return next;
+      });
+      setLogs(prev => [`${activeHero.name} failed minigame and took ${heroDamage} damage!`, ...prev]);
+      useSkill(pendingAction.skill, pendingAction.target, 0.75); // Failure multiplier (reduced damage to enemy)
     }
+    setPendingAction(null);
     setActiveMinigame(null);
   };
 
@@ -172,7 +190,7 @@ const BattleScene: React.FC<BattleSceneProps> = ({ heroes, waves, onVictory, onD
     
     const aliveEnemies = currentEnemies.filter(e => e.hp > 0);
     for (const enemy of aliveEnemies) {
-      await new Promise(r => setTimeout(r, 600)); // Faster enemy turns
+      await new Promise(r => setTimeout(r, 800)); // Reverted enemy turn speed (was 600)
       const aliveHeroes = currentHeroes.filter(h => h.hp > 0);
       const targetHero = aliveHeroes[Math.floor(Math.random() * aliveHeroes.length)];
       if (!targetHero) break;
@@ -224,10 +242,10 @@ const BattleScene: React.FC<BattleSceneProps> = ({ heroes, waves, onVictory, onD
       {resonanceActive && (
         <ResonanceOverlay onComplete={(taps) => {
           setResonanceActive(false);
-          setResonanceCooldownTurns(5); // Lowered cooldown significantly
-          const heal = taps * 50 + 500; // Much stronger heal
+          setResonanceCooldownTurns(12); // Reverted cooldown (was 5, then 10)
+          const heal = taps * 30 + 200; // Reverted heal (was 50*500)
           setCurrentHeroes(prev => prev.map(h => h.hp > 0 ? { ...h, hp: Math.min(h.maxHp, h.hp + heal) } : h));
-          if (taps >= 5) { setStrengthBuffDuration(5); triggerShake('heavy'); soundService.play('MAGIC'); }
+          if (taps >= 8) { setStrengthBuffDuration(3); triggerShake('heavy'); soundService.play('MAGIC'); } // Reverted strength buff duration (was 5)
         }} />
       )}
       
@@ -258,7 +276,19 @@ const BattleScene: React.FC<BattleSceneProps> = ({ heroes, waves, onVictory, onD
               <div className={`w-28 h-28 md:w-36 md:h-36 rounded-[2.5rem] overflow-hidden border-2 border-red-500/20 shadow-2xl relative bg-slate-950 transition-transform ${attackingUnitId === enemy.id ? 'lunge-enemy' : ''} ${hitUnitId === enemy.id ? 'animate-hit' : ''}`}>
                 <img src={enemy.sprite} className="w-full h-full object-cover" />
                 {damageEvents.filter(e => e.unitId === enemy.id).map(e => (
-                   <div key={e.id} className={`damage-popup absolute inset-0 flex items-center justify-center font-black drop-shadow-lg ${e.isCrit ? 'text-amber-400 text-6xl' : 'text-white text-4xl'}`}>
+                   <div 
+                     key={e.id} 
+                     className={`damage-popup absolute flex items-center justify-center font-black drop-shadow-lg ${e.isCrit ? 'text-amber-400 text-6xl' : 'text-white text-4xl'}`}
+                     style={{ 
+                       '--dx': `${e.offsetX}px`, 
+                       '--dy-start': `0px`, 
+                       '--dy-mid': `-50px`, 
+                       '--dy-end': `-100px`, 
+                       left: '50%', 
+                       top: '50%',
+                       transform: `translate(-50%, -50%) translate3d(${e.offsetX}px, ${e.offsetY}px, 0)` // Adjust initial position
+                     } as React.CSSProperties}
+                   >
                      {e.value < 0 ? `+${Math.abs(e.value)}` : `-${e.value}`}
                    </div>
                 ))}
@@ -286,7 +316,19 @@ const BattleScene: React.FC<BattleSceneProps> = ({ heroes, waves, onVictory, onD
               <div className={`w-28 h-28 md:w-36 md:h-36 rounded-[2rem] overflow-hidden border-2 transition-all duration-500 relative bg-slate-950 shadow-2xl ${activeHeroId === hero.id ? 'border-violet-500 shadow-[0_0_40px_rgba(139,92,246,0.4)]' : 'border-slate-800 opacity-80'} ${attackingUnitId === hero.id ? 'lunge-player' : ''} ${hitUnitId === hero.id ? 'animate-hit' : ''} animate-unit-idle`}>
                 <img src={hero.sprite} className="w-full h-full object-cover" />
                 {damageEvents.filter(e => e.unitId === hero.id).map(e => (
-                   <div key={e.id} className={`damage-popup absolute inset-0 flex items-center justify-center font-black drop-shadow-lg ${e.value < 0 ? 'text-emerald-400 text-5xl' : 'text-red-500 text-4xl'}`}>
+                   <div 
+                     key={e.id} 
+                     className={`damage-popup absolute flex items-center justify-center font-black drop-shadow-lg ${e.value < 0 ? 'text-emerald-400 text-5xl' : 'text-red-500 text-4xl'}`}
+                     style={{ 
+                       '--dx': `${e.offsetX}px`, 
+                       '--dy-start': `0px`, 
+                       '--dy-mid': `-50px`, 
+                       '--dy-end': `-100px`, 
+                       left: '50%', 
+                       top: '50%',
+                       transform: `translate(-50%, -50%) translate3d(${e.offsetX}px, ${e.offsetY}px, 0)` // Adjust initial position
+                     } as React.CSSProperties}
+                   >
                       {e.value < 0 ? `+${Math.abs(e.value)}` : `-${e.value}`}
                    </div>
                 ))}

@@ -1,4 +1,5 @@
 
+
 export enum GameScreen {
   LORE_INTRO = 'LORE_INTRO',
   TITLE = 'TITLE',
@@ -83,7 +84,7 @@ export interface Skill {
   cost?: number;
   effects?: Ability[]; 
   unlocked: boolean;
-  unlockCost?: number;
+  unlockCost?: number; // New: Cost to unlock this skill
 }
 
 export interface DialogueLine {
@@ -131,4 +132,6 @@ export interface GameState {
   lastSaved?: string;
   settings: GameSettings;
   currentChapterId?: number; 
+  currentEnergy: number; // New: Current energy shards
+  lastEnergyReplenishTime: number; // New: Timestamp for energy regeneration
 }

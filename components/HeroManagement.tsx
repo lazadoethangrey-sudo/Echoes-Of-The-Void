@@ -1,4 +1,5 @@
 
+
 import React, { useState, useMemo } from 'react';
 import { Unit, Equipment, Skill, Trait } from '../types';
 import { soundService } from '../services/soundService';
@@ -11,10 +12,11 @@ interface HeroManagementProps {
   onUpdateHero: (hero: Unit) => void;
   onUpdateParty: (party: Unit[]) => void;
   onSpendShards: (amount: number) => void;
+  onUpdateInventory: (inventory: Equipment[]) => void; // New prop
   onClose: () => void;
 }
 
-const HeroManagement: React.FC<HeroManagementProps> = ({ allHeroes, activeParty, inventory, shards, onUpdateHero, onUpdateParty, onSpendShards, onClose }) => {
+const HeroManagement: React.FC<HeroManagementProps> = ({ allHeroes, activeParty, inventory, shards, onUpdateHero, onUpdateParty, onSpendShards, onUpdateInventory, onClose }) => {
   const [selectedHeroIdx, setSelectedHeroIdx] = useState(0);
   const [activeSubTab, setActiveSubTab] = useState<'LINEUP' | 'STATS' | 'EQUIP' | 'SKILLS'>('LINEUP');
   const [equippingSlot, setEquippingSlot] = useState<'WEAPON' | 'ARMOR' | null>(null);
@@ -61,6 +63,54 @@ const HeroManagement: React.FC<HeroManagementProps> = ({ allHeroes, activeParty,
     setLineupSlotToFill(null);
     soundService.play('CLICK');
   };
+
+  // --- Equipment Management Logic ---
+  const handleEquipItem = (item: Equipment, slot: 'WEAPON' | 'ARMOR') => {
+    if (!hero) return;
+    soundService.play('CLICK');
+
+    const prevEquippedItem = hero.equipment[slot];
+    const newHero = { ...hero, equipment: { ...hero.equipment, [slot]: item } };
+    
+    let newInventory = inventory.filter(invItem => invItem.id !== item.id);
+    if (prevEquippedItem) {
+      newInventory = [...newInventory, prevEquippedItem];
+    }
+    onUpdateHero(newHero);
+    onUpdateInventory(newInventory);
+    setEquippingSlot(null); // Close the item selection
+  };
+
+  const handleUnequipItem = (slot: 'WEAPON' | 'ARMOR') => {
+    if (!hero || !hero.equipment[slot]) return;
+    soundService.play('CLICK');
+
+    const itemToUnequip = hero.equipment[slot];
+    const newHero = { ...hero, equipment: { ...hero.equipment, [slot]: null } };
+    const newInventory = [...inventory, itemToUnequip!]; // Add item back to inventory
+    
+    onUpdateHero(newHero);
+    onUpdateInventory(newInventory);
+  };
+
+  const filteredInventory = useMemo(() => {
+    if (!equippingSlot) return [];
+    return inventory.filter(item => item.slot === equippingSlot);
+  }, [inventory, equippingSlot]);
+
+  // --- Skill Management Logic ---
+  const handleUnlockSkill = (skillToUnlock: Skill) => {
+    if (!hero || !skillToUnlock.unlockCost || shards < skillToUnlock.unlockCost) return;
+    soundService.play('MAGIC');
+
+    onSpendShards(skillToUnlock.unlockCost);
+    const updatedSkills = hero.skills.map(s => 
+      s.name === skillToUnlock.name ? { ...s, unlocked: true } : s
+    );
+    const newHero = { ...hero, skills: updatedSkills };
+    onUpdateHero(newHero);
+  };
+
 
   return (
     <div className="w-full h-screen bg-[#020617] p-6 md:p-10 flex flex-col items-center relative overflow-hidden">
@@ -205,7 +255,6 @@ const HeroManagement: React.FC<HeroManagementProps> = ({ allHeroes, activeParty,
                  </div>
                )}
 
-               {/* Stats and other tabs remain functional with same structure as before but polished styles */}
                {activeSubTab === 'STATS' && (
                  <div className="space-y-10 animate-in slide-in-from-bottom-6 duration-500">
                     <div className="flex items-center gap-6">
@@ -213,10 +262,10 @@ const HeroManagement: React.FC<HeroManagementProps> = ({ allHeroes, activeParty,
                          <i className="fas fa-dna text-3xl"></i>
                        </div>
                        <div>
-                         <h3 className="text-4xl font-cinzel text-white font-black tracking-widest uppercase mb-1">{hero.name}</h3>
+                         <h3 className="text-4xl font-cinzel text-white font-black tracking-widest uppercase mb-1">{hero?.name || "Select Hero"}</h3>
                          <div className="flex gap-4">
-                            <span className="text-xs text-violet-500 font-mono font-bold uppercase tracking-widest">Level {hero.level} Combat Unit</span>
-                            <span className={`text-xs font-mono font-black uppercase tracking-widest ${getRarityStyle(hero.rarity)}`}>{hero.rarity?.replace(/_/g, ' ')}</span>
+                            <span className="text-xs text-violet-500 font-mono font-bold uppercase tracking-widest">Level {hero?.level || 0} Combat Unit</span>
+                            <span className={`text-xs font-mono font-black uppercase tracking-widest ${getRarityStyle(hero?.rarity)}`}>{hero?.rarity?.replace(/_/g, ' ') || 'N/A'}</span>
                          </div>
                        </div>
                     </div>
@@ -226,45 +275,151 @@ const HeroManagement: React.FC<HeroManagementProps> = ({ allHeroes, activeParty,
                          { label: 'Attack Matrix', stat: 'attack', icon: 'fa-sword', color: 'text-red-500', sub: 'Primary Strike Force' },
                          { label: 'Neural Guard', stat: 'defense', icon: 'fa-shield-halved', color: 'text-blue-500', sub: 'Damage Mitigation' },
                          { label: 'Bio Mass', stat: 'maxHp', icon: 'fa-heart-pulse', color: 'text-emerald-500', sub: 'Structural Integrity' }
-                       ].map(s => (
-                         <div key={s.stat} className="glass p-8 rounded-[2rem] border-slate-800 flex items-center justify-between group hover:border-violet-500/30 transition-all duration-500">
-                            <div className="flex items-center gap-8">
-                               <i className={`fas ${s.icon} ${s.color} text-4xl w-12 text-center opacity-40 group-hover:opacity-100 transition-opacity duration-500`}></i>
-                               <div>
-                                  <div className="text-[10px] text-slate-600 font-black uppercase tracking-[0.4em] mb-1">{s.label}</div>
-                                  <div className="text-3xl font-mono text-white font-black leading-none">{(hero[s.stat as keyof Unit] as number).toLocaleString()}</div>
-                                  <div className="text-[8px] text-slate-700 font-mono mt-2 uppercase tracking-widest">{s.sub}</div>
+                       ].map(s => {
+                          const enhancementCost = 50 * (hero?.level || 1); // Increased cost (was 25)
+                          return (
+                            <div key={s.stat} className="glass p-8 rounded-[2rem] border-slate-800 flex items-center justify-between group hover:border-violet-500/30 transition-all duration-500">
+                               <div className="flex items-center gap-8">
+                                  <i className={`fas ${s.icon} ${s.color} text-4xl w-12 text-center opacity-40 group-hover:opacity-100 transition-opacity duration-500`}></i>
+                                  <div>
+                                     <div className="text-[10px] text-slate-600 font-black uppercase tracking-[0.4em] mb-1">{s.label}</div>
+                                     <div className="text-3xl font-mono text-white font-black leading-none">{(hero && hero[s.stat as keyof Unit] as number)?.toLocaleString() || 0}</div>
+                                     <div className="text-[8px] text-slate-700 font-mono mt-2 uppercase tracking-widest">{s.sub}</div>
+                                  </div>
                                </div>
+                               <button 
+                                 onClick={() => {
+                                   if (hero && shards >= enhancementCost) {
+                                     onSpendShards(enhancementCost);
+                                     const next = { ...hero };
+                                     if (s.stat === 'maxHp') next.maxHp += 15; // Decreased gain (was 20)
+                                     else if (s.stat === 'attack') next.attack += 2; // Decreased gain (was 3)
+                                     else next.defense += 2; // Decreased gain (was 3)
+                                     onUpdateHero(next);
+                                     soundService.play('MAGIC');
+                                   }
+                                 }}
+                                 disabled={!hero || shards < enhancementCost}
+                                 className="px-8 py-3 bg-violet-600 hover:bg-violet-500 disabled:opacity-20 text-white rounded-xl text-[10px] font-black font-cinzel tracking-widest uppercase transition-all shadow-xl shadow-violet-950"
+                               >
+                                 Enhance ({enhancementCost})
+                               </button>
                             </div>
-                            <button 
-                              onClick={() => {
-                                const cost = 25 * hero.level;
-                                if (shards >= cost) {
-                                  onSpendShards(cost);
-                                  const next = { ...hero };
-                                  if (s.stat === 'maxHp') next.maxHp += 20;
-                                  else if (s.stat === 'attack') next.attack += 3;
-                                  else next.defense += 3;
-                                  onUpdateHero(next);
-                                  soundService.play('MAGIC');
-                                }
-                              }}
-                              disabled={shards < 25 * hero.level}
-                              className="px-8 py-3 bg-violet-600 hover:bg-violet-500 disabled:opacity-20 text-white rounded-xl text-[10px] font-black font-cinzel tracking-widest uppercase transition-all shadow-xl shadow-violet-950"
-                            >
-                              Enhance ({25 * hero.level})
-                            </button>
-                         </div>
-                       ))}
+                          );
+                       })}
                     </div>
                  </div>
                )}
 
-               {/* Other sub-tabs would follow this same premium pattern */}
-               {(activeSubTab === 'EQUIP' || activeSubTab === 'SKILLS') && (
+               {activeSubTab === 'EQUIP' && hero && (
+                 <div className="space-y-10 animate-in slide-in-from-bottom-6 duration-500">
+                   <h3 className="text-4xl font-cinzel text-white font-black tracking-widest uppercase mb-1">{hero.name}</h3>
+                   <div className="grid grid-cols-2 gap-8">
+                     {(['WEAPON', 'ARMOR'] as const).map(slot => (
+                       <div key={slot} className="flex flex-col items-center gap-4">
+                         <span className="text-[10px] font-black font-cinzel text-slate-500 uppercase tracking-widest">{slot} Slot</span>
+                         <div 
+                           onClick={() => setEquippingSlot(slot)}
+                           className={`relative w-40 h-52 rounded-2xl border-4 flex flex-col items-center justify-center p-3 transition-all duration-300 cursor-pointer overflow-hidden shadow-xl
+                             ${equippingSlot === slot ? 'border-violet-500 bg-violet-950/20 ring-4 ring-violet-500/20' : 'border-slate-800 bg-slate-900/40 hover:border-violet-500/50'}
+                           `}
+                         >
+                           {hero.equipment[slot] ? (
+                             <>
+                               <img src={`https://picsum.photos/seed/equip-${hero.equipment[slot]?.id}/100/150`} className="w-full h-full object-cover brightness-75" />
+                               <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent"></div>
+                               <div className="absolute bottom-4 left-0 w-full text-center">
+                                 <span className="text-xs font-cinzel text-white font-black uppercase truncate px-2">{hero.equipment[slot]?.name}</span>
+                                 <span className="text-[8px] font-mono text-slate-500 block">+{hero.equipment[slot]?.value} {hero.equipment[slot]?.stat.toUpperCase()}</span>
+                               </div>
+                               <button 
+                                 onClick={(e) => { e.stopPropagation(); handleUnequipItem(slot); }}
+                                 className="absolute top-2 right-2 w-8 h-8 bg-red-600 rounded-full flex items-center justify-center text-xs text-white shadow-2xl hover:bg-red-500 transition-all border-2 border-slate-950"
+                               >
+                                 <i className="fas fa-times"></i>
+                               </button>
+                             </>
+                           ) : (
+                             <div className="flex flex-col items-center gap-4 text-slate-800">
+                               <i className={`fas ${slot === 'WEAPON' ? 'fa-sword' : 'fa-shield-halved'} text-4xl`}></i>
+                               <span className="text-[10px] font-black uppercase tracking-[0.3em] font-mono">Empty</span>
+                             </div>
+                           )}
+                         </div>
+                       </div>
+                     ))}
+                   </div>
+
+                   {equippingSlot && (
+                     <div className="mt-10">
+                       <h4 className="text-xl font-cinzel text-white font-black tracking-widest uppercase mb-4">Available {equippingSlot}s</h4>
+                       {filteredInventory.length === 0 ? (
+                         <p className="text-slate-500 italic text-sm text-center">No available {equippingSlot}s in inventory.</p>
+                       ) : (
+                         <div className="grid grid-cols-2 md:grid-cols-3 gap-4 max-h-64 overflow-y-auto custom-scrollbar">
+                           {filteredInventory.map(item => (
+                             <button 
+                               key={item.id} 
+                               onClick={() => handleEquipItem(item, equippingSlot)}
+                               className="group p-3 rounded-xl border border-slate-800 bg-slate-900/40 hover:border-emerald-500/50 hover:bg-emerald-950/20 transition-all flex items-center gap-4 text-left relative"
+                             >
+                               <img src={`https://picsum.photos/seed/inv-${item.id}/50/50`} className="w-10 h-10 rounded-lg object-cover border border-slate-700" />
+                               <div>
+                                 <span className="text-xs font-cinzel text-white font-black block truncate">{item.name}</span>
+                                 <span className="text-[8px] font-mono text-emerald-400 block">+{item.value} {item.stat.toUpperCase()}</span>
+                               </div>
+                               <div className="absolute top-2 right-2 text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <i className="fas fa-arrow-up-from-bracket"></i>
+                               </div>
+                             </button>
+                           ))}
+                         </div>
+                       )}
+                     </div>
+                   )}
+                 </div>
+               )}
+
+               {activeSubTab === 'SKILLS' && hero && (
+                 <div className="space-y-10 animate-in slide-in-from-bottom-6 duration-500">
+                   <h3 className="text-4xl font-cinzel text-white font-black tracking-widest uppercase mb-1">{hero.name}</h3>
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                     {hero.skills.map((skill, idx) => (
+                       <div key={idx} className="glass p-6 rounded-2xl border-slate-800 flex flex-col group hover:border-violet-500/30 transition-all duration-500 relative">
+                         <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                           <i className="fas fa-bolt text-5xl"></i>
+                         </div>
+                         <h4 className="text-xl font-cinzel text-white font-black mb-2 flex items-center gap-3">
+                           {skill.name}
+                           {!skill.unlocked && <span className="text-[8px] font-mono text-red-500 uppercase tracking-widest ml-2">(Locked)</span>}
+                         </h4>
+                         <p className="text-slate-500 text-sm italic mb-4">{skill.description}</p>
+                         <div className="mt-auto pt-4 border-t border-slate-800 flex justify-between items-center">
+                           <span className="text-[10px] font-mono text-violet-400 font-bold">POWER: {skill.power}</span>
+                           {skill.unlocked ? (
+                             <span className="text-[10px] font-mono text-emerald-400 font-bold uppercase">Active</span>
+                           ) : (
+                             skill.unlockCost && (
+                               <button 
+                                 onClick={() => handleUnlockSkill(skill)}
+                                 disabled={shards < skill.unlockCost}
+                                 className="px-6 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-20 text-white rounded-lg text-[9px] font-black font-cinzel uppercase transition-all shadow-md"
+                               >
+                                 Unlock ({skill.unlockCost})
+                               </button>
+                             )
+                           )}
+                         </div>
+                       </div>
+                     ))}
+                   </div>
+                 </div>
+               )}
+
+               {!hero && (
                  <div className="flex flex-col items-center justify-center h-full opacity-40">
-                    <i className="fas fa-gear animate-[spin_10s_linear_infinite] text-6xl text-violet-500 mb-6"></i>
-                    <span className="text-xs font-cinzel font-black tracking-[0.5em] text-white uppercase">System Calibrated</span>
+                    <i className="fas fa-question-circle text-6xl text-slate-700 mb-6"></i>
+                    <span className="text-xs font-cinzel font-black tracking-[0.5em] text-white uppercase">No Hero Selected</span>
                  </div>
                )}
             </div>

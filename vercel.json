@@ -1,3 +1,4 @@
+
 {
   "headers": [
     {
@@ -5,7 +6,12 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://cdn.tailwindcss.com;"
+          "value": "default-src 'self'; " +
+                   "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://cdn.tailwindcss.com; " +
+                   "style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com; " +
+                   "img-src 'self' https://picsum.photos data:; " +
+                   "media-src 'self' https://assets.mixkit.co https://www.soundhelix.com; " +
+                   "connect-src 'self' https://generativelanguage.googleapis.com;"
         }
       ]
     }

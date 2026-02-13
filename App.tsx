@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import { CSSTransition, TransitionGroup } from 'react-transition-group';
 import TitleScreen from './components/TitleScreen';
 import LoreIntro from './components/LoreIntro';
 import ChapterSelect from './components/ChapterSelect';
@@ -12,7 +13,7 @@ import SettingsModal from './components/SettingsModal';
 import EnemyIndex from './components/EnemyIndex';
 import StoryIntro from './components/StoryIntro';
 import { GameScreen, GameState, Stage, Unit, Equipment, GameSettings, DialogueLine } from './types';
-import { INITIAL_PARTY, CHAPTER_STAGES, HERO_POOL } from './constants';
+import { INITIAL_PARTY, CHAPTER_STAGES, HERO_POOL, MAX_ENERGY, ENERGY_REGEN_INTERVAL_MS, ENERGY_REFILL_COST } from './constants';
 import { getStageDialogueStream } from './services/geminiService';
 import { soundService } from './services/soundService';
 
@@ -37,6 +38,7 @@ const App: React.FC = () => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const cursorRef = useRef<HTMLDivElement>(null);
   const mousePos = useRef({ x: -100, y: -100 });
+  const screenRef = useRef<HTMLDivElement>(null); // Ref for the CSSTransition child
 
   const [gameState, setGameState] = useState<GameState>(() => {
     const saved = localStorage.getItem(SAVE_KEY);
@@ -62,7 +64,9 @@ const App: React.FC = () => {
         musicVolume: 0.4,
         mouseSensitivity: 1.0,
         screenShakeEnabled: true
-      }
+      },
+      currentEnergy: MAX_ENERGY, // New: Initialize energy
+      lastEnergyReplenishTime: Date.now() // New: Initialize energy timestamp
     };
 
     if (saved) {
@@ -78,7 +82,20 @@ const App: React.FC = () => {
         merged.party = merged.party.map(sanitizeUnit);
         merged.allHeroes = merged.allHeroes.map(sanitizeUnit);
         merged.saveVersion = LATEST_SAVE_VERSION;
-        return { ...merged, screen: GameScreen.TITLE };
+
+        // NEW: Recalculate energy on load
+        let loadedEnergy = merged.currentEnergy || 0;
+        const loadedTime = merged.lastEnergyReplenishTime || Date.now();
+        const now = Date.now();
+        const elapsedTime = now - loadedTime;
+        const energyGained = Math.floor(elapsedTime / ENERGY_REGEN_INTERVAL_MS);
+        
+        loadedEnergy = Math.min(MAX_ENERGY, loadedEnergy + energyGained);
+        
+        // Update lastEnergyReplenishTime to reflect gained energy
+        const newLastEnergyTime = loadedTime + (energyGained * ENERGY_REGEN_INTERVAL_MS);
+
+        return { ...merged, screen: GameScreen.TITLE, currentEnergy: loadedEnergy, lastEnergyReplenishTime: newLastEnergyTime };
       } catch (e) { 
         console.error("Save load failed.", e); 
       }
@@ -144,8 +161,30 @@ const App: React.FC = () => {
     gameState.shards, gameState.heroTickets, gameState.itemTickets, gameState.totalAccountExp, 
     gameState.unlockedStages, gameState.attemptedStages, gameState.party, gameState.allHeroes,
     gameState.inventory, gameState.settings, gameState.totalDailyClaims,
-    gameState.lastDailyClaim, gameState.currentChapterId
+    gameState.lastDailyClaim, gameState.currentChapterId,
+    // NEW: Trigger save on energy changes
+    gameState.currentEnergy, gameState.lastEnergyReplenishTime
   ]);
+
+  // NEW: Energy Regeneration Effect
+  useEffect(() => {
+    const energyRegenTimer = setInterval(() => {
+      setGameState(prev => {
+        const now = Date.now();
+        const elapsedTime = now - prev.lastEnergyReplenishTime;
+        const energyGained = Math.floor(elapsedTime / ENERGY_REGEN_INTERVAL_MS);
+
+        if (energyGained > 0 && prev.currentEnergy < MAX_ENERGY) {
+          const newEnergy = Math.min(MAX_ENERGY, prev.currentEnergy + energyGained);
+          const newLastEnergyTime = prev.lastEnergyReplenishTime + (energyGained * ENERGY_REGEN_INTERVAL_MS);
+          return { ...prev, currentEnergy: newEnergy, lastEnergyReplenishTime: newLastEnergyTime };
+        }
+        return prev;
+      });
+    }, 1000); // Check every second
+
+    return () => clearInterval(energyRegenTimer);
+  }, []); // Run once on component mount
 
   useEffect(() => {
     if (!audioRef.current) {
@@ -209,8 +248,20 @@ const App: React.FC = () => {
   };
 
   const selectStage = (stage: Stage) => {
+    if (gameState.currentEnergy <= 0) {
+      alert("Insufficient energy to initiate combat! Replenish your energy to proceed.");
+      soundService.play('DEFEAT'); // Play a negative sound for feedback
+      return;
+    }
+
     soundService.play('CLICK');
-    setGameState(prev => ({ ...prev, currentStage: stage, screen: GameScreen.STORY_INTRO, storyDialogue: [{ speaker: "NARRATOR", text: stage.loreNote }] }));
+    setGameState(prev => ({ 
+      ...prev, 
+      currentStage: stage, 
+      screen: GameScreen.STORY_INTRO, 
+      storyDialogue: [{ speaker: "NARRATOR", text: stage.loreNote }],
+      currentEnergy: prev.currentEnergy - 1 // Consume 1 energy
+    }));
     setIsNarrating(true);
     let dialogueAccumulator = "";
     getStageDialogueStream(stage.name, stage.description, stage.loreNote, (chunk) => {
@@ -223,14 +274,30 @@ const App: React.FC = () => {
     }).finally(() => { setIsNarrating(false); });
   };
 
+  const replenishEnergy = () => {
+    if (gameState.shards >= ENERGY_REFILL_COST && gameState.currentEnergy < MAX_ENERGY) {
+      soundService.play('MAGIC');
+      setGameState(prev => ({
+        ...prev,
+        shards: prev.shards - ENERGY_REFILL_COST,
+        currentEnergy: MAX_ENERGY,
+        lastEnergyReplenishTime: Date.now()
+      }));
+    } else if (gameState.currentEnergy >= MAX_ENERGY) {
+      alert("Energy bar is already full!");
+    } else {
+      alert("Not enough Void Shards to replenish energy.");
+    }
+  };
+
   const onVictory = () => {
     soundService.play('VICTORY');
     if (!gameState.currentStage) return;
     const stage = gameState.currentStage;
     const isFirstTime = !stages.find(s => s.id === stage.id)?.completed;
     const nextStageId = stage.id + 1;
-    const shardsWon = isFirstTime ? 500 : 10;
-    const expWon = stage.expReward;
+    const shardsWon = isFirstTime ? stage.shardReward : Math.floor(stage.shardReward * 0.1); // Dynamic rewards based on first time clear
+    const expWon = isFirstTime ? stage.expReward : Math.floor(stage.expReward * 0.1);
     let newHeroList = [...gameState.allHeroes];
     let grantedHeroName: string | undefined = undefined;
     let newHeroTickets = gameState.heroTickets;
@@ -248,7 +315,8 @@ const App: React.FC = () => {
     const updatedParty = gameState.party.map(hero => {
       let h = { ...hero, exp: hero.exp + expWon };
       while (h.exp >= h.maxExp) {
-        h.exp -= h.maxExp; h.level += 1; h.maxExp = Math.floor(h.maxExp * 1.2); h.maxHp += 8; h.hp = h.maxHp; h.attack += 2; h.defense += 1;
+        h.exp -= h.maxExp; h.level += 1; h.maxExp = Math.floor(h.maxExp * 1.3); // Increased XP needed for level up (was 1.25)
+        h.maxHp += 5; h.hp = h.maxHp; h.attack += 0.8; h.defense += 0.4; // NERFED: Slower stat gains (was 6, 1, 0.5)
       }
       return h;
     });
@@ -271,6 +339,10 @@ const App: React.FC = () => {
       }
       return { ...prev, screen, attemptedStages };
     }); 
+  };
+
+  const onUpdateInventory = (updatedInventory: Equipment[]) => {
+    setGameState(prev => ({...prev, inventory: updatedInventory}));
   };
 
   return (
@@ -300,109 +372,123 @@ const App: React.FC = () => {
       )}
 
       <div className="flex-1 relative overflow-hidden">
-        {gameState.screen === GameScreen.LORE_INTRO && ( <LoreIntro onComplete={() => navigateTo(GameScreen.TITLE)} /> )}
-        {gameState.screen === GameScreen.TITLE && (
-          <TitleScreen 
-            onStart={startGame} 
-            onNewGame={startNewGame}
-            onOpenSettings={() => { soundService.play('CLICK'); setShowSettings(true); }}
-            saveData={{ shards: gameState.shards, exp: gameState.totalAccountExp, lastSaved: gameState.lastSaved, exists: gameState.totalAccountExp > 0 || gameState.unlockedStages.length > 1 }} 
-          />
-        )}
-        
-        {gameState.screen === GameScreen.CHAPTER_SELECT && (
-          <ChapterSelect 
-            stages={stages} 
-            onSelectChapter={selectChapter} 
-            onBack={() => navigateTo(GameScreen.TITLE)} 
-            shards={gameState.shards} 
-          />
-        )}
+        <TransitionGroup component={null}>
+          <CSSTransition nodeRef={screenRef} key={gameState.screen} classNames="screen-transition" timeout={600}>
+            <div ref={screenRef} className="absolute inset-0"> {/* Wrapper div for consistent positioning */}
+              {gameState.screen === GameScreen.LORE_INTRO && ( <LoreIntro onComplete={() => navigateTo(GameScreen.TITLE)} /> )}
+              {gameState.screen === GameScreen.TITLE && (
+                <TitleScreen 
+                  onStart={startGame} 
+                  onNewGame={startNewGame}
+                  onOpenSettings={() => { soundService.play('CLICK'); setShowSettings(true); }}
+                  saveData={{ shards: gameState.shards, exp: gameState.totalAccountExp, lastSaved: gameState.lastSaved, exists: gameState.totalAccountExp > 0 || gameState.unlockedStages.length > 1 }} 
+                />
+              )}
+              
+              {gameState.screen === GameScreen.CHAPTER_SELECT && (
+                <ChapterSelect 
+                  stages={stages} 
+                  onSelectChapter={selectChapter} 
+                  onBack={() => navigateTo(GameScreen.TITLE)} 
+                  shards={gameState.shards} 
+                  currentEnergy={gameState.currentEnergy}
+                  maxEnergy={MAX_ENERGY}
+                  onReplenishEnergy={replenishEnergy}
+                />
+              )}
 
-        {gameState.screen === GameScreen.MAP && (
-          <div className="relative h-full">
-            <StageSelect 
-              stages={stages.filter(s => s.chapterId === gameState.currentChapterId)} 
-              onSelectStage={selectStage} 
-              onBackToTitle={() => navigateTo(GameScreen.CHAPTER_SELECT)}
-              shards={gameState.shards} 
-            />
-            <div className="fixed bottom-24 right-8 flex flex-col gap-4 z-20">
-              <button onClick={() => navigateTo(GameScreen.ENEMY_INDEX)} className="w-16 h-16 bg-emerald-600 rounded-full flex items-center justify-center border-2 border-emerald-400 hover:scale-110 active:scale-95 transition-all shadow-lg"><i className="fas fa-eye text-2xl"></i></button>
-              <button onClick={() => navigateTo(GameScreen.GACHA)} className="w-16 h-16 bg-gradient-to-br from-blue-700 to-indigo-900 rounded-full flex items-center justify-center border-2 border-blue-400 hover:scale-110 active:scale-95 transition-all relative overflow-hidden group">
-                <div className="absolute inset-0 border-2 border-dashed border-blue-300/20 rounded-full animate-[spin_4s_linear_infinite] group-hover:border-blue-300/40"></div>
-                <div className="relative z-10 flex flex-col items-center">
-                  <i className="fas fa-portal-enter text-2xl text-blue-100 drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]"></i>
-                  <span className="text-[6px] font-black font-cinzel tracking-tighter text-blue-200 mt-0.5">SUMMON</span>
+              {/* Fix: Changed GameGameScreen to GameScreen */}
+              {gameState.screen === GameScreen.MAP && (
+                <div className="relative h-full">
+                  <StageSelect 
+                    stages={stages.filter(s => s.chapterId === gameState.currentChapterId)} 
+                    onSelectStage={selectStage} 
+                    onBackToTitle={() => navigateTo(GameScreen.CHAPTER_SELECT)}
+                    shards={gameState.shards} 
+                    currentEnergy={gameState.currentEnergy}
+                    maxEnergy={MAX_ENERGY}
+                    onReplenishEnergy={replenishEnergy}
+                  />
+                  <div className="fixed bottom-24 right-8 flex flex-col gap-4 z-20">
+                    <button onClick={() => navigateTo(GameScreen.ENEMY_INDEX)} className="w-16 h-16 bg-emerald-600 rounded-full flex items-center justify-center border-2 border-emerald-400 hover:scale-110 active:scale-95 transition-all shadow-lg"><i className="fas fa-eye text-2xl"></i></button>
+                    <button onClick={() => navigateTo(GameScreen.GACHA)} className="w-16 h-16 bg-gradient-to-br from-blue-700 to-indigo-900 rounded-full flex items-center justify-center border-2 border-blue-400 hover:scale-110 active:scale-95 transition-all relative overflow-hidden group">
+                      <div className="absolute inset-0 border-2 border-dashed border-blue-300/20 rounded-full animate-[spin_4s_linear_infinite] group-hover:border-blue-300/40"></div>
+                      <div className="relative z-10 flex flex-col items-center">
+                        <i className="fas fa-portal-enter text-2xl text-blue-100 drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]"></i>
+                        <span className="text-[6px] font-black font-cinzel tracking-tighter text-blue-200 mt-0.5">SUMMON</span>
+                      </div>
+                    </button>
+                    <button onClick={() => navigateTo(GameScreen.HERO_MANAGEMENT)} className="w-16 h-16 bg-violet-600 rounded-full flex items-center justify-center border-2 border-violet-400 hover:scale-110 active:scale-95 transition-all shadow-lg"><i className="fas fa-shield-halved text-2xl"></i></button>
+                  </div>
                 </div>
-              </button>
-              <button onClick={() => navigateTo(GameScreen.HERO_MANAGEMENT)} className="w-16 h-16 bg-violet-600 rounded-full flex items-center justify-center border-2 border-violet-400 hover:scale-110 active:scale-95 transition-all shadow-lg"><i className="fas fa-shield-halved text-2xl"></i></button>
-            </div>
-          </div>
-        )}
+              )}
 
-        {gameState.screen === GameScreen.STORY_INTRO && gameState.currentStage && (
-          <StoryIntro 
-            stage={gameState.currentStage} 
-            dialogue={gameState.storyDialogue} 
-            isNarrating={isNarrating} 
-            isAttempted={gameState.attemptedStages.includes(gameState.currentStage.id)}
-            onDeploy={() => navigateTo(GameScreen.BATTLE)} 
-            onBack={() => navigateTo(GameScreen.MAP)} 
-          />
-        )}
+              {gameState.screen === GameScreen.STORY_INTRO && gameState.currentStage && (
+                <StoryIntro 
+                  stage={gameState.currentStage} 
+                  dialogue={gameState.storyDialogue} 
+                  isNarrating={isNarrating} 
+                  isAttempted={gameState.attemptedStages.includes(gameState.currentStage.id)}
+                  onDeploy={() => navigateTo(GameScreen.BATTLE)} 
+                  onBack={() => navigateTo(GameScreen.MAP)} 
+                  currentEnergy={gameState.currentEnergy}
+                />
+              )}
 
-        {gameState.screen === GameScreen.BATTLE && gameState.currentStage && (
-          <BattleScene heroes={gameState.party} waves={gameState.currentStage.waves} onVictory={onVictory} onDefeat={() => { soundService.play('DEFEAT'); navigateTo(GameScreen.DEFEAT); }} onRetreat={() => navigateTo(GameScreen.MAP)} stageName={gameState.currentStage.name} shards={gameState.shards} settings={gameState.settings} />
-        )}
+              {gameState.screen === GameScreen.BATTLE && gameState.currentStage && (
+                <BattleScene heroes={gameState.party} waves={gameState.currentStage.waves} onVictory={onVictory} onDefeat={() => { soundService.play('DEFEAT'); navigateTo(GameScreen.DEFEAT); }} onRetreat={() => navigateTo(GameScreen.MAP)} stageName={gameState.currentStage.name} shards={gameState.shards} settings={gameState.settings} />
+              )}
 
-        {gameState.screen === GameScreen.ENEMY_INDEX && <EnemyIndex stages={stages} onClose={() => navigateTo(GameScreen.MAP)} />}
-        {gameState.screen === GameScreen.GACHA && (
-          <GachaSystem 
-            shards={gameState.shards} heroTickets={gameState.heroTickets} itemTickets={gameState.itemTickets}
-            onAddTickets={(types) => setGameState(p => {
-              const cost = types.length * 100; if (p.shards < cost) return p;
-              let newHero = p.heroTickets; let newItem = p.itemTickets;
-              types.forEach(t => { if (t === 'ECHO') newHero++; else newItem++; });
-              return { ...p, shards: p.shards - cost, heroTickets: newHero, itemTickets: newItem };
-            })}
-            onConsumeTickets={(type, count) => setGameState(p => ({ ...p, heroTickets: type === 'CHARACTER' ? p.heroTickets - count : p.heroTickets, itemTickets: type === 'ITEM' ? p.itemTickets - count : p.itemTickets, }))}
-            onObtainItems={(items) => setGameState(p => ({ ...p, inventory: [...p.inventory, ...items] }))} 
-            onObtainHeroes={(heroes) => setGameState(p => { const nl = [...p.allHeroes]; heroes.forEach(h => { if (!nl.find(e => e.name === h.name)) nl.push(h); }); return { ...p, allHeroes: nl }; })} 
-            onClose={() => navigateTo(GameScreen.MAP)} 
-          />
-        )}
-        {gameState.screen === GameScreen.HERO_MANAGEMENT && <HeroManagement allHeroes={gameState.allHeroes} activeParty={gameState.party} inventory={gameState.inventory} shards={gameState.shards} onUpdateHero={(h) => setGameState(p => { const nl = p.allHeroes.map(u => u.id === h.id ? h : u); const np = p.party.map(u => u.id === h.id ? h : u); return { ...p, allHeroes: nl, party: np }; })} onUpdateParty={(party) => setGameState(p => ({ ...p, party }))} onSpendShards={(amt) => setGameState(p => ({ ...p, shards: p.shards - amt }))} onClose={() => navigateTo(GameScreen.MAP)} />}
-        {gameState.screen === GameScreen.VICTORY && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-2xl p-4 animate-in fade-in duration-700">
-            <div className="max-w-2xl w-full flex flex-col items-center">
-               <div className="text-emerald-400 font-cinzel text-2xl tracking-[1em] uppercase mb-4 animate-pulse">Signature Secured</div>
-               <h1 className="text-8xl font-black font-cinzel text-white text-glow mb-12 tracking-widest uppercase italic">VICTORY</h1>
-               <div className="grid grid-cols-2 gap-8 w-full mb-16">
-                  <div className="glass p-8 rounded-3xl border-emerald-500/20 text-center">
-                     <div className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-2">Mastery Gains</div>
-                     <div className="text-4xl font-mono text-emerald-400 font-bold">+{showRewards?.exp.toLocaleString()}</div>
+              {gameState.screen === GameScreen.ENEMY_INDEX && <EnemyIndex stages={stages} onClose={() => navigateTo(GameScreen.MAP)} />}
+              {gameState.screen === GameScreen.GACHA && (
+                <GachaSystem 
+                  shards={gameState.shards} heroTickets={gameState.heroTickets} itemTickets={gameState.itemTickets}
+                  onAddTickets={(types) => setGameState(p => {
+                    const cost = types.length * 100; if (p.shards < cost) return p;
+                    let newHero = p.heroTickets; let newItem = p.itemTickets;
+                    types.forEach(t => { if (t === 'ECHO') newHero++; else newItem++; });
+                    return { ...p, shards: p.shards - cost, heroTickets: newHero, itemTickets: newItem };
+                  })}
+                  onConsumeTickets={(type, count) => setGameState(p => ({ ...p, heroTickets: type === 'CHARACTER' ? p.heroTickets - count : p.heroTickets, itemTickets: type === 'ITEM' ? p.itemTickets - count : p.itemTickets, }))}
+                  onObtainItems={(items) => setGameState(p => ({ ...p, inventory: [...p.inventory, ...items] }))} 
+                  onObtainHeroes={(heroes) => setGameState(p => { const nl = [...p.allHeroes]; heroes.forEach(h => { if (!nl.find(e => e.name === h.name)) nl.push(h); }); return { ...p, allHeroes: nl }; })} 
+                  onClose={() => navigateTo(GameScreen.MAP)} 
+                />
+              )}
+              {gameState.screen === GameScreen.HERO_MANAGEMENT && <HeroManagement allHeroes={gameState.allHeroes} activeParty={gameState.party} inventory={gameState.inventory} shards={gameState.shards} onUpdateHero={(h) => setGameState(p => { const nl = p.allHeroes.map(u => u.id === h.id ? h : u); const np = p.party.map(u => u.id === h.id ? h : u); return { ...p, allHeroes: nl, party: np }; })} onUpdateParty={(party) => setGameState(p => ({ ...p, party }))} onSpendShards={(amt) => setGameState(p => ({ ...p, shards: p.shards - amt }))} onUpdateInventory={onUpdateInventory} onClose={() => navigateTo(GameScreen.MAP)} />}
+              {gameState.screen === GameScreen.VICTORY && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-2xl p-4 animate-in fade-in duration-700">
+                  <div className="max-w-2xl w-full flex flex-col items-center">
+                    <div className="text-emerald-400 font-cinzel text-2xl tracking-[1em] uppercase mb-4 animate-pulse">Signature Secured</div>
+                    <h1 className="text-8xl font-black font-cinzel text-white text-glow mb-12 tracking-widest uppercase italic">VICTORY</h1>
+                    <div className="grid grid-cols-2 gap-8 w-full mb-16">
+                        <div className="glass p-8 rounded-3xl border-emerald-500/20 text-center">
+                          <div className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-2">Mastery Gains</div>
+                          <div className="text-4xl font-mono text-emerald-400 font-bold">+{showRewards?.exp.toLocaleString()}</div>
+                        </div>
+                        <div className="glass p-8 rounded-3xl border-violet-500/20 text-center">
+                          <div className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-2">Void Essence</div>
+                          <div className="text-4xl font-mono text-violet-400 font-bold">+{showRewards?.shards.toLocaleString()}</div>
+                        </div>
+                    </div>
+                    {showRewards?.newHero && ( <div className="mb-12 flex flex-col items-center animate-bounce"> <div className="text-amber-400 font-black font-cinzel text-xs tracking-widest uppercase mb-4">New Echo Resonated!</div> <div className="text-3xl font-cinzel text-white font-bold">{showRewards.newHero}</div> </div> )}
+                    <button onClick={() => navigateTo(GameScreen.MAP)} className="px-24 py-6 bg-white text-slate-950 font-black font-cinzel tracking-widest rounded-[2rem] hover:bg-emerald-500 hover:text-white transition-all active:scale-95 shadow-2xl text-xl uppercase" > Return to Archive </button>
                   </div>
-                  <div className="glass p-8 rounded-3xl border-violet-500/20 text-center">
-                     <div className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-2">Void Essence</div>
-                     <div className="text-4xl font-mono text-violet-400 font-bold">+{showRewards?.shards.toLocaleString()}</div>
+                </div>
+              )}
+              {gameState.screen === GameScreen.DEFEAT && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-red-950/20 backdrop-blur-3xl p-4 animate-in fade-in duration-1000">
+                  <div className="max-w-xl w-full flex flex-col items-center text-center">
+                      <div className="w-24 h-24 bg-red-600/20 rounded-full flex items-center justify-center mb-8 border border-red-500/30 text-red-500 text-4xl animate-pulse"> <i className="fas fa-skull"></i> </div>
+                      <h1 className="text-7xl font-black font-cinzel text-white mb-6 tracking-widest uppercase italic">TIMELINE COLLAPSE</h1>
+                      <p className="text-slate-400 mb-12 font-cinzel italic leading-relaxed">"The singularity has claimed your echoes. This timeline is no longer viable."</p>
+                      <button onClick={() => navigateTo(GameScreen.MAP)} className="px-20 py-5 bg-red-600 hover:bg-red-500 text-white font-black font-cinzel tracking-widest rounded-2xl transition-all active:scale-95 shadow-xl text-lg uppercase" > Recalibrate (Try Again) </button>
                   </div>
-               </div>
-               {showRewards?.newHero && ( <div className="mb-12 flex flex-col items-center animate-bounce"> <div className="text-amber-400 font-black font-cinzel text-xs tracking-widest uppercase mb-4">New Echo Resonated!</div> <div className="text-3xl font-cinzel text-white font-bold">{showRewards.newHero}</div> </div> )}
-               <button onClick={() => navigateTo(GameScreen.MAP)} className="px-24 py-6 bg-white text-slate-950 font-black font-cinzel tracking-widest rounded-[2rem] hover:bg-emerald-500 hover:text-white transition-all active:scale-95 shadow-2xl text-xl uppercase" > Return to Archive </button>
+                </div>
+              )}
             </div>
-          </div>
-        )}
-        {gameState.screen === GameScreen.DEFEAT && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-red-950/20 backdrop-blur-3xl p-4 animate-in fade-in duration-1000">
-            <div className="max-w-xl w-full flex flex-col items-center text-center">
-               <div className="w-24 h-24 bg-red-600/20 rounded-full flex items-center justify-center mb-8 border border-red-500/30 text-red-500 text-4xl animate-pulse"> <i className="fas fa-skull"></i> </div>
-               <h1 className="text-7xl font-black font-cinzel text-white mb-6 tracking-widest uppercase italic">TIMELINE COLLAPSE</h1>
-               <p className="text-slate-400 mb-12 font-cinzel italic leading-relaxed">"The singularity has claimed your echoes. This timeline is no longer viable."</p>
-               <button onClick={() => navigateTo(GameScreen.MAP)} className="px-20 py-5 bg-red-600 hover:bg-red-500 text-white font-black font-cinzel tracking-widest rounded-2xl transition-all active:scale-95 shadow-xl text-lg uppercase" > Recalibrate (Try Again) </button>
-            </div>
-          </div>
-        )}
+          </CSSTransition>
+        </TransitionGroup>
       </div>
 
       <DailyReward claimed={!showDaily} onClaim={claimDaily} totalClaims={gameState.totalDailyClaims} />

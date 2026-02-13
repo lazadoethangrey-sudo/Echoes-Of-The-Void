@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { CATEGORIES } from '../constants';
+import { CATEGORIES, MAX_ENERGY, ENERGY_REFILL_COST } from '../constants';
 import { Category, Stage } from '../types';
 import { soundService } from '../services/soundService';
 
@@ -9,9 +9,12 @@ interface ChapterSelectProps {
   onSelectChapter: (chapterId: number) => void;
   onBack: () => void;
   shards: number;
+  currentEnergy: number; // New prop
+  maxEnergy: number; // New prop
+  onReplenishEnergy: () => void; // New prop
 }
 
-const ChapterSelect: React.FC<ChapterSelectProps> = ({ stages, onSelectChapter, onBack, shards }) => {
+const ChapterSelect: React.FC<ChapterSelectProps> = ({ stages, onSelectChapter, onBack, shards, currentEnergy, maxEnergy, onReplenishEnergy }) => {
   const [selectedCategoryId, setSelectedCategoryId] = useState(CATEGORIES[0].id);
 
   const activeCategory = CATEGORIES.find(c => c.id === selectedCategoryId)!;
@@ -53,9 +56,41 @@ const ChapterSelect: React.FC<ChapterSelectProps> = ({ stages, onSelectChapter, 
             <p className="text-slate-500 font-mono text-[9px] uppercase tracking-[0.4em] mt-2">Active Categories // Choose Expedition</p>
           </div>
         </div>
-        <div className="glass px-8 py-3 rounded-2xl border-violet-500/20 flex items-center gap-4">
-          <i className="fas fa-gem text-violet-400 text-lg"></i>
-          <span className="font-mono text-2xl font-bold text-white leading-none">{shards.toLocaleString()}</span>
+        <div className="flex gap-4">
+          {/* Energy Bar */}
+          <div className="glass px-6 py-3 rounded-2xl border-amber-500/20 flex items-center gap-4 shadow-[0_0_30px_rgba(251,191,36,0.1)]">
+            <div className="flex flex-col items-end">
+              <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest font-mono">Energy</span>
+              <span className="font-mono text-xl font-bold text-white tracking-tight">{currentEnergy}/{maxEnergy}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              {[...Array(maxEnergy)].map((_, i) => (
+                <div 
+                  key={i} 
+                  className={`w-3 h-4 rounded-[2px] transition-all duration-300 ${i < currentEnergy ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)]' : 'bg-slate-700/50'}`}
+                ></div>
+              ))}
+            </div>
+            <button
+              onClick={onReplenishEnergy}
+              disabled={currentEnergy >= maxEnergy || shards < ENERGY_REFILL_COST}
+              title={`Replenish all energy for ${ENERGY_REFILL_COST} shards`}
+              className="ml-2 px-3 py-1 bg-amber-600 hover:bg-amber-500 disabled:opacity-30 disabled:hover:bg-amber-600 text-white text-[8px] font-black font-cinzel tracking-widest uppercase rounded-lg transition-all"
+            >
+              <i className="fas fa-bolt mr-1"></i>
+              REFILL ({ENERGY_REFILL_COST})
+            </button>
+          </div>
+          {/* Shards Display */}
+          <div className="glass px-8 py-3 rounded-2xl border-violet-500/20 flex items-center gap-5 shadow-[0_0_30px_rgba(139,92,246,0.1)]">
+            <div className="flex flex-col items-end">
+              <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest font-mono">Void Essence</span>
+              <span className="font-mono text-2xl font-bold text-white tracking-tight">{shards.toLocaleString()}</span>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-violet-600/20 flex items-center justify-center border border-violet-500/30">
+              <i className="fas fa-gem text-violet-400 text-lg animate-pulse"></i>
+            </div>
+          </div>
         </div>
       </header>
 

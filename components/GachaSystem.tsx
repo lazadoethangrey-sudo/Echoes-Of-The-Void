@@ -1,4 +1,5 @@
 
+
 import React, { useState, useMemo } from 'react';
 import { Equipment, Unit, Rarity, Trait } from '../types';
 import { GACHA_POOL, HERO_POOL } from '../constants';
@@ -460,9 +461,9 @@ const GachaSystem: React.FC<GachaSystemProps> = ({ shards, heroTickets, itemTick
 
       <style>{`
         @keyframes loading {
-          0% { width: 0; margin-left: 0; }
-          50% { width: 100%; margin-left: 0; }
-          100% { width: 0; margin-left: 100%; }
+          0% { width: 0; transform: translateX(-100%); }
+          50% { width: 100%; transform: translateX(0); }
+          100% { width: 0; transform: translateX(100%); }
         }
         .perspective-1000 { perspective: 1000px; }
         .bg-gradient-radial { background: radial-gradient(var(--tw-gradient-stops)); }

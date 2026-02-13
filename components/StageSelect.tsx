@@ -1,16 +1,21 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { Stage, Trait } from '../types';
 import { soundService } from '../services/soundService';
+import { MAX_ENERGY, ENERGY_REFILL_COST } from '../constants'; // Import constants
 
 interface StageSelectProps {
   stages: Stage[];
   onSelectStage: (stage: Stage) => void;
   onBackToTitle: () => void;
   shards: number;
+  currentEnergy: number; // New prop
+  maxEnergy: number; // New prop
+  onReplenishEnergy: () => void; // New prop
 }
 
-const StageSelect: React.FC<StageSelectProps> = ({ stages, onSelectStage, onBackToTitle, shards }) => {
+const StageSelect: React.FC<StageSelectProps> = ({ stages, onSelectStage, onBackToTitle, shards, currentEnergy, maxEnergy, onReplenishEnergy }) => {
   const [hoveredStage, setHoveredStage] = useState<Stage | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -50,6 +55,31 @@ const StageSelect: React.FC<StageSelectProps> = ({ stages, onSelectStage, onBack
           </div>
           
           <div className="flex gap-4">
+            {/* Energy Bar */}
+            <div className="glass px-6 py-3 rounded-2xl border-amber-500/20 flex items-center gap-4 shadow-[0_0_30px_rgba(251,191,36,0.1)]">
+              <div className="flex flex-col items-end">
+                <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest font-mono">Energy</span>
+                <span className="font-mono text-xl font-bold text-white tracking-tight">{currentEnergy}/{maxEnergy}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                {[...Array(maxEnergy)].map((_, i) => (
+                  <div 
+                    key={i} 
+                    className={`w-3 h-4 rounded-[2px] transition-all duration-300 ${i < currentEnergy ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)]' : 'bg-slate-700/50'}`}
+                  ></div>
+                ))}
+              </div>
+              <button
+                onClick={onReplenishEnergy}
+                disabled={currentEnergy >= maxEnergy || shards < ENERGY_REFILL_COST}
+                title={`Replenish all energy for ${ENERGY_REFILL_COST} shards`}
+                className="ml-2 px-3 py-1 bg-amber-600 hover:bg-amber-500 disabled:opacity-30 disabled:hover:bg-amber-600 text-white text-[8px] font-black font-cinzel tracking-widest uppercase rounded-lg transition-all"
+              >
+                <i className="fas fa-bolt mr-1"></i>
+                REFILL ({ENERGY_REFILL_COST})
+              </button>
+            </div>
+            {/* Shards Display */}
             <div className="glass px-8 py-3 rounded-2xl border-violet-500/20 flex items-center gap-5 shadow-[0_0_30px_rgba(139,92,246,0.1)]">
               <div className="flex flex-col items-end">
                 <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest font-mono">Void Essence</span>
@@ -65,7 +95,7 @@ const StageSelect: React.FC<StageSelectProps> = ({ stages, onSelectStage, onBack
         <div className="flex-1 overflow-y-auto pr-3 custom-scrollbar pb-12">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
             {stages.map((stage) => {
-              const isSelectable = stage.unlocked;
+              const isSelectable = stage.unlocked && currentEnergy > 0; // Stage now requires energy
               const isHovered = hoveredStage?.id === stage.id;
               
               return (
@@ -112,8 +142,17 @@ const StageSelect: React.FC<StageSelectProps> = ({ stages, onSelectStage, onBack
                       {stage.description}
                     </p>
 
+                    {stage.unlocked && ( /* Show energy cost only if stage is unlocked */
+                      <div className="flex justify-between items-center text-[8px] font-black uppercase text-amber-400 tracking-widest mt-auto">
+                        <div className="flex items-center gap-1">
+                          <i className="fas fa-bolt"></i>
+                          <span>1 Energy</span>
+                        </div>
+                      </div>
+                    )}
+
                     {isSelectable && (
-                        <div className="mt-auto flex flex-col gap-3 pt-3 border-t border-slate-800/50">
+                        <div className="flex flex-col gap-3 pt-3 border-t border-slate-800/50">
                            <div className="flex justify-between items-center text-[8px] font-black uppercase text-slate-600 tracking-widest">
                              <span>Rewards</span>
                              <div className="flex gap-2 text-violet-400 font-mono">
@@ -130,7 +169,17 @@ const StageSelect: React.FC<StageSelectProps> = ({ stages, onSelectStage, onBack
                   
                   {!isSelectable && (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-[2px] z-10 pointer-events-none">
-                       <i className="fas fa-lock text-slate-800 text-3xl"></i>
+                       {stage.unlocked ? (
+                         <div className="flex flex-col items-center text-slate-800">
+                           <i className="fas fa-bolt text-3xl mb-2"></i>
+                           <span className="text-sm font-cinzel tracking-widest">No Energy</span>
+                         </div>
+                       ) : (
+                         <div className="flex flex-col items-center text-slate-800">
+                           <i className="fas fa-lock text-3xl"></i>
+                           <span className="text-sm font-cinzel tracking-widest">Locked</span>
+                         </div>
+                       )}
                     </div>
                   )}
                 </div>
