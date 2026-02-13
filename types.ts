@@ -2,6 +2,7 @@
 export enum GameScreen {
   LORE_INTRO = 'LORE_INTRO',
   TITLE = 'TITLE',
+  CHAPTER_SELECT = 'CHAPTER_SELECT',
   MAP = 'MAP',
   STORY_INTRO = 'STORY_INTRO',
   BATTLE = 'BATTLE',
@@ -15,6 +16,15 @@ export enum GameScreen {
 export type MinigameType = 'DODGE' | 'WIRES' | 'DECRYPT' | 'PURGE' | 'RHYTHM' | 'BALANCE' | 'LINK' | 'MATCH';
 
 export type Trait = 'VOID' | 'CRIMSON' | 'AETHER' | 'STEEL' | 'NEBULA' | 'BEHEMOTH' | 'HERO' | 'SOLAR' | 'LUNAR' | 'STORM' | 'VENOM' | 'FROST' | 'CHAOS' | 'PHANTOM' | 'GLITCH' | 'PRIME';
+
+export interface Category {
+  id: string;
+  name: string;
+  description: string;
+  color: string;
+  icon: string;
+  chapters: number[]; // Array of chapter IDs belonging to this category
+}
 
 export interface Ability {
   type: 'STRONG' | 'MASSIVE_DAMAGE' | 'RESISTANT' | 'WEAKEN' | 'STUN' | 'VOID_RESIST';
@@ -110,13 +120,15 @@ export interface GameState {
   inventory: Equipment[];
   currentStage: Stage | null;
   unlockedStages: number[];
+  attemptedStages: number[]; // Track stages that have been entered
   storyDialogue: DialogueLine[];
   shards: number;
   heroTickets: number;
   itemTickets: number;
   totalAccountExp: number;
-  lastDailyClaim: string | null;
+  lastDailyClaim: null | string;
   totalDailyClaims: number;
   lastSaved?: string;
   settings: GameSettings;
+  currentChapterId?: number; 
 }

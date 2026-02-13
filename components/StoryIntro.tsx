@@ -1,15 +1,17 @@
-import React from 'react';
-import { Stage, DialogueLine } from '../types';
+
+import React, { useMemo } from 'react';
+import { Stage, DialogueLine, Unit, Trait } from '../types';
 
 interface StoryIntroProps {
   stage: Stage;
   dialogue: DialogueLine[];
   isNarrating: boolean;
+  isAttempted: boolean;
   onDeploy: () => void;
   onBack: () => void;
 }
 
-const StoryIntro: React.FC<StoryIntroProps> = ({ stage, dialogue, isNarrating, onDeploy, onBack }) => {
+const StoryIntro: React.FC<StoryIntroProps> = ({ stage, dialogue, isNarrating, isAttempted, onDeploy, onBack }) => {
   const getAvatar = (name: string) => {
     const n = name.toLowerCase();
     if (n.includes('kaelen')) return 'https://picsum.photos/seed/hero1/200/200';
@@ -20,6 +22,25 @@ const StoryIntro: React.FC<StoryIntroProps> = ({ stage, dialogue, isNarrating, o
     return 'https://picsum.photos/seed/mysterious/200/200';
   };
 
+  const getTraitColor = (trait: Trait) => {
+    switch(trait) {
+        case 'CRIMSON': return 'text-red-500';
+        case 'AETHER': return 'text-blue-400';
+        case 'STEEL': return 'text-slate-400';
+        case 'NEBULA': return 'text-purple-400';
+        case 'VOID': return 'text-violet-500';
+        default: return 'text-white';
+    }
+  };
+
+  const detectedEnemies = useMemo(() => {
+    const unique = new Map<string, Unit>();
+    stage.waves.flat().forEach(e => {
+      if (!unique.has(e.name)) unique.set(e.name, e);
+    });
+    return Array.from(unique.values());
+  }, [stage.waves]);
+
   const isBoss = stage.isBoss;
 
   return (
@@ -27,7 +48,7 @@ const StoryIntro: React.FC<StoryIntroProps> = ({ stage, dialogue, isNarrating, o
       <div className="fixed inset-0 bg-cover bg-center opacity-20 blur-2xl scale-110 animate-[pulse_10s_infinite] pointer-events-none" style={{ backgroundImage: `url(https://picsum.photos/seed/void-st${stage.id}/1920/1080)` }}></div>
       <div className="fixed inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-slate-950 pointer-events-none"></div>
       
-      <div className="max-w-4xl w-full z-10 my-auto py-8 pb-48"> {/* Added significant bottom padding here */}
+      <div className="max-w-4xl w-full z-10 my-auto py-8 pb-48">
         <div className="flex flex-col gap-4">
           {/* Stage Header */}
           <div className="text-center mb-6">
@@ -39,6 +60,30 @@ const StoryIntro: React.FC<StoryIntroProps> = ({ stage, dialogue, isNarrating, o
              <h2 className="text-3xl md:text-7xl font-cinzel text-white text-glow font-black tracking-widest uppercase break-words px-2">{stage.name}</h2>
              <p className="text-slate-500 font-mono text-[9px] md:text-[11px] uppercase tracking-[0.2em] md:tracking-[0.4em] mt-2">Chapter {stage.chapterId} // Sector {stage.id}</p>
           </div>
+
+          {/* Enemy Intel Section (Visible if attempted before) */}
+          {isAttempted && (
+            <div className="glass p-6 rounded-[2rem] border-violet-500/20 mb-4 animate-in fade-in slide-in-from-top-4 duration-700">
+               <div className="flex items-center gap-3 mb-4 border-b border-white/5 pb-2">
+                  <i className="fas fa-radar text-violet-400 text-xs animate-pulse"></i>
+                  <span className="text-[10px] font-black font-cinzel text-violet-400 uppercase tracking-widest">Detected Signatures</span>
+               </div>
+               <div className="flex flex-wrap gap-6 justify-center">
+                  {detectedEnemies.map((enemy, idx) => (
+                    <div key={idx} className="flex items-center gap-3 group">
+                       <div className="w-12 h-12 rounded-xl overflow-hidden border border-slate-700 relative">
+                          <img src={enemy.sprite} className="w-full h-full object-cover group-hover:scale-110 transition-transform" />
+                          <div className="absolute inset-0 bg-[linear-gradient(rgba(139,92,246,0.1)_1px,transparent_1px)] bg-[size:100%_2px] opacity-40"></div>
+                       </div>
+                       <div>
+                          <div className="text-[10px] font-bold text-white truncate max-w-[100px]">{enemy.name}</div>
+                          <div className={`text-[8px] font-black uppercase tracking-tighter ${getTraitColor(enemy.trait)}`}>{enemy.trait}</div>
+                       </div>
+                    </div>
+                  ))}
+               </div>
+            </div>
+          )}
 
           {/* Dialogue Display */}
           <div className="glass p-6 md:p-12 rounded-[2rem] md:rounded-[4rem] border-slate-800/60 min-h-[300px] flex flex-col justify-center relative shadow-2xl overflow-hidden group">

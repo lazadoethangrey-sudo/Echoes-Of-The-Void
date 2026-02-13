@@ -11,7 +11,6 @@ interface StageSelectProps {
 }
 
 const StageSelect: React.FC<StageSelectProps> = ({ stages, onSelectStage, onBackToTitle, shards }) => {
-  const [activeChapter] = useState(1);
   const [hoveredStage, setHoveredStage] = useState<Stage | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -30,7 +29,7 @@ const StageSelect: React.FC<StageSelectProps> = ({ stages, onSelectStage, onBack
     }
   };
 
-  const filteredStages = stages.filter(s => s.chapterId === activeChapter);
+  const currentChapterId = stages[0]?.chapterId || 1;
 
   return (
     <div className={`w-full h-screen bg-[#020617] p-6 md:p-10 flex flex-col items-center overflow-hidden transition-opacity duration-1000 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}>
@@ -46,7 +45,7 @@ const StageSelect: React.FC<StageSelectProps> = ({ stages, onSelectStage, onBack
             </button>
             <div>
               <h2 className="text-3xl md:text-5xl font-black font-cinzel text-violet-400 text-glow uppercase tracking-[0.2em] leading-none">Sector Archive</h2>
-              <p className="text-slate-600 font-mono text-[9px] uppercase tracking-[0.4em] mt-2">Active Deployment // Chapter 01</p>
+              <p className="text-slate-600 font-mono text-[9px] uppercase tracking-[0.4em] mt-2">Active Deployment // Chapter {currentChapterId}</p>
             </div>
           </div>
           
@@ -65,7 +64,7 @@ const StageSelect: React.FC<StageSelectProps> = ({ stages, onSelectStage, onBack
 
         <div className="flex-1 overflow-y-auto pr-3 custom-scrollbar pb-12">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
-            {filteredStages.map((stage) => {
+            {stages.map((stage) => {
               const isSelectable = stage.unlocked;
               const isHovered = hoveredStage?.id === stage.id;
               
@@ -77,7 +76,6 @@ const StageSelect: React.FC<StageSelectProps> = ({ stages, onSelectStage, onBack
                   onClick={() => isSelectable && onSelectStage(stage)}
                   className={`group relative rounded-[2rem] border-2 transition-all duration-500 flex flex-col h-80 overflow-hidden shadow-2xl ${isSelectable ? 'cursor-pointer border-slate-800 hover:border-violet-500/50 bg-slate-900/40' : 'border-slate-900/50 bg-black opacity-20'}`}
                 >
-                  {/* Visual Background */}
                   <div className="h-32 relative overflow-hidden flex-shrink-0">
                     <img 
                       src={`https://picsum.photos/seed/void-s${stage.id}/400/300`} 
@@ -103,7 +101,7 @@ const StageSelect: React.FC<StageSelectProps> = ({ stages, onSelectStage, onBack
                       <span className={`text-[9px] font-black tracking-[0.2em] font-mono ${getTraitColor(stage.waves[0][0].trait)}`}>
                         {stage.waves[0][0].trait}
                       </span>
-                      <span className="text-[8px] font-mono text-slate-500">Z-ID: {stage.id.toString().padStart(2, '0')}</span>
+                      <span className="text-[8px] font-mono text-slate-500">Z-ID: {stage.id.toString().padStart(3, '0')}</span>
                     </div>
 
                     <h3 className="font-cinzel text-lg font-black text-white mb-2 group-hover:text-violet-400 transition-colors uppercase leading-tight truncate">
@@ -130,7 +128,6 @@ const StageSelect: React.FC<StageSelectProps> = ({ stages, onSelectStage, onBack
                     )}
                   </div>
                   
-                  {/* Locked Overlay */}
                   {!isSelectable && (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-[2px] z-10 pointer-events-none">
                        <i className="fas fa-lock text-slate-800 text-3xl"></i>
@@ -140,14 +137,6 @@ const StageSelect: React.FC<StageSelectProps> = ({ stages, onSelectStage, onBack
               );
             })}
           </div>
-        </div>
-
-        <div className="mt-6 p-6 glass rounded-[2rem] border-slate-800/50 flex justify-between items-center text-[10px] text-slate-500 font-black uppercase tracking-[0.3em] font-mono animate-in slide-in-from-bottom-6">
-           <div className="flex items-center gap-10">
-              <span className="flex items-center gap-3"><div className="w-2.5 h-2.5 bg-violet-600 rounded-full shadow-[0_0_8px_#8b5cf6]"></div>Expedition Active</span>
-              <span className="flex items-center gap-3"><div className="w-2.5 h-2.5 bg-emerald-500 rounded-full shadow-[0_0_8px_#10b981]"></div>{stages.filter(s => s.completed).length} Signatures Decoded</span>
-           </div>
-           <div className="hidden lg:block italic text-slate-700">Recommended Trait resistance listed per sector</div>
         </div>
       </div>
     </div>

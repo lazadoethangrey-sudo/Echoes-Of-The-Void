@@ -12,11 +12,6 @@ interface DamageEvent {
   isCrit?: boolean;
 }
 
-interface SlashEvent {
-  id: number;
-  unitId: string;
-}
-
 interface BattleSceneProps {
   heroes: Unit[]; 
   waves: Unit[][];
@@ -42,8 +37,10 @@ const BattleScene: React.FC<BattleSceneProps> = ({ heroes, waves, onVictory, onD
   const [isProcessing, setIsProcessing] = useState(false);
   const [showRetreatConfirm, setShowRetreatConfirm] = useState(false);
   const [damageEvents, setDamageEvents] = useState<DamageEvent[]>([]);
-  const [slashEvents, setSlashEvents] = useState<SlashEvent[]>([]);
-  const [showLogsMobile, setShowLogsMobile] = useState(false);
+  
+  // Animation state
+  const [attackingUnitId, setAttackingUnitId] = useState<string | null>(null);
+  const [hitUnitId, setHitUnitId] = useState<string | null>(null);
 
   const [shakeIntensity, setShakeIntensity] = useState<ShakeIntensity>('none');
   const [activeMinigame, setActiveMinigame] = useState<MinigameType | null>(null);
@@ -54,7 +51,6 @@ const BattleScene: React.FC<BattleSceneProps> = ({ heroes, waves, onVictory, onD
 
   const eventIdCounter = useRef(0);
   const activeHero = currentHeroes.find(h => h.id === activeHeroId);
-  const retreatCost = 500;
 
   useEffect(() => {
     if (turn === 'PLAYER') {
@@ -64,24 +60,17 @@ const BattleScene: React.FC<BattleSceneProps> = ({ heroes, waves, onVictory, onD
 
   const addDamagePopup = (unitId: string, value: number, isCrit = false) => {
     const id = ++eventIdCounter.current;
+    // Offset each popup slightly for visibility
     setDamageEvents(prev => [...prev, { id, unitId, value, isCrit }]);
     setTimeout(() => {
       setDamageEvents(prev => prev.filter(e => e.id !== id));
-    }, 1500);
+    }, 1200);
   };
 
   const triggerShake = (intensity: ShakeIntensity) => {
     if (!settings.screenShakeEnabled) return;
     setShakeIntensity(intensity);
-    setTimeout(() => setShakeIntensity('none'), 500);
-  };
-
-  const addSlashEffect = (unitId: string) => {
-    const id = ++eventIdCounter.current;
-    setSlashEvents(prev => [...prev, { id, unitId }]);
-    setTimeout(() => {
-      setSlashEvents(prev => prev.filter(e => e.id !== id));
-    }, 600);
+    setTimeout(() => setShakeIntensity('none'), 400);
   };
 
   const checkEndState = useCallback((heroes: Unit[], enemies: Unit[]) => {
@@ -95,7 +84,7 @@ const BattleScene: React.FC<BattleSceneProps> = ({ heroes, waves, onVictory, onD
           setActedHeroIds(new Set());
           setActiveHeroId(null);
           setTurn('PLAYER');
-          setLogs(prev => [`WAVE ${nextIdx + 1} manifest in the void!`, ...prev]);
+          setLogs(prev => [`WAVE ${nextIdx + 1} manifest!`, ...prev]);
           setIsProcessing(false);
         }, 1200);
         return false;
@@ -113,45 +102,48 @@ const BattleScene: React.FC<BattleSceneProps> = ({ heroes, waves, onVictory, onD
   const useSkill = async (skill: Skill, target: Unit, multiplier: number = 1.0) => {
     if (isProcessing || !activeHero) return;
     setIsProcessing(true);
+    setAttackingUnitId(activeHero.id);
 
     const isHeal = skill.type === 'HEAL';
     let powerMult = (skill.power / 10) * multiplier;
-    if (strengthBuffDuration > 0) powerMult *= 3.0; 
+    if (strengthBuffDuration > 0) powerMult *= 2.5; 
+
+    // Smooth movement anticipation
+    await new Promise(r => setTimeout(r, 150)); 
 
     if (isHeal) {
       const healAmt = Math.floor(activeHero.attack * powerMult);
       soundService.play('HEAL');
-      setCurrentHeroes(prev => {
-        const next = prev.map(h => h.id === target.id ? { ...h, hp: Math.min(h.maxHp, h.hp + healAmt) } : h);
-        return next;
-      });
-      addDamagePopup(target.id, healAmt);
-      setLogs(prev => [`${activeHero.name} resonates ${skill.name} -> ${target.name}.`, ...prev]);
+      setCurrentHeroes(prev => prev.map(h => h.id === target.id ? { ...h, hp: Math.min(h.maxHp, h.hp + healAmt) } : h));
+      addDamagePopup(target.id, -healAmt);
     } else {
-      const damage = Math.max(1, Math.floor((activeHero.attack * powerMult) - target.defense));
+      const damage = Math.max(1, Math.floor((activeHero.attack * powerMult) - (target.defense * 0.5))); // Defense is less effective for enemies now
       soundService.play('SLASH');
-      addSlashEffect(target.id);
-      addDamagePopup(target.id, damage, multiplier > 1);
-      triggerShake(damage > 100 ? 'heavy' : 'medium');
+      setHitUnitId(target.id);
+      addDamagePopup(target.id, damage, isCrit(multiplier));
+      triggerShake('medium');
       setCurrentEnemies(prev => {
         const next = prev.map(e => e.id === target.id ? { ...e, hp: Math.max(0, e.hp - damage) } : e);
         checkEndState(currentHeroes, next);
         return next;
       });
-      setLogs(prev => [`${activeHero.name} strikes with ${skill.name} -> ${target.name}!`, ...prev]);
+      setLogs(prev => [`${activeHero.name} strikes with ${skill.name}!`, ...prev]);
     }
 
+    await new Promise(r => setTimeout(r, 450));
+    setAttackingUnitId(null);
+    setHitUnitId(null);
     setActedHeroIds(prev => new Set(prev).add(activeHero.id));
     setActiveHeroId(null);
     setIsProcessing(false);
-    
-    if (strengthBuffDuration > 0) {
-      setStrengthBuffDuration(prev => prev - 1);
-    }
+    if (strengthBuffDuration > 0) setStrengthBuffDuration(prev => prev - 1);
   };
 
+  const isCrit = (multiplier: number) => multiplier > 1.2 || Math.random() > 0.85;
+
   const handleActionClick = (skill: Skill, target: Unit) => {
-    if (Math.random() < 0.3) {
+    // Minigames are now only triggered if the player is doing well or explicitly hits a low chance
+    if (Math.random() < 0.15) { 
       setPendingAction({ skill, target });
       const types: MinigameType[] = ['WIRES', 'DECRYPT', 'PURGE', 'RHYTHM', 'BALANCE', 'LINK', 'MATCH', 'DODGE'];
       setActiveMinigame(types[Math.floor(Math.random() * types.length)]);
@@ -163,15 +155,12 @@ const BattleScene: React.FC<BattleSceneProps> = ({ heroes, waves, onVictory, onD
   const onMinigameFinish = (success: boolean) => {
     if (pendingAction) {
       if (success) {
-        const bonusDamage = Math.floor(pendingAction.target.maxHp * 0.15);
+        const bonusDamage = Math.floor(pendingAction.target.maxHp * 0.25); // Buffed reward
         addDamagePopup(pendingAction.target.id, bonusDamage, true);
         triggerShake('heavy');
-        setCurrentEnemies(prev => {
-          const next = prev.map(e => e.id === pendingAction.target.id ? { ...e, hp: Math.max(0, e.hp - bonusDamage) } : e);
-          return next;
-        });
+        setCurrentEnemies(prev => prev.map(e => e.id === pendingAction.target.id ? { ...e, hp: Math.max(0, e.hp - bonusDamage) } : e));
       }
-      useSkill(pendingAction.skill, pendingAction.target, success ? 2.5 : 0.8);
+      useSkill(pendingAction.skill, pendingAction.target, success ? 2.5 : 1.0); // No penalty for failing now
       setPendingAction(null);
     }
     setActiveMinigame(null);
@@ -183,16 +172,18 @@ const BattleScene: React.FC<BattleSceneProps> = ({ heroes, waves, onVictory, onD
     
     const aliveEnemies = currentEnemies.filter(e => e.hp > 0);
     for (const enemy of aliveEnemies) {
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 600)); // Faster enemy turns
       const aliveHeroes = currentHeroes.filter(h => h.hp > 0);
       const targetHero = aliveHeroes[Math.floor(Math.random() * aliveHeroes.length)];
       if (!targetHero) break;
 
+      setAttackingUnitId(enemy.id);
       const skill = enemy.skills[0];
       const damage = Math.max(1, Math.floor((enemy.attack * (skill.power / 10)) - targetHero.defense));
       
+      await new Promise(r => setTimeout(r, 150));
       soundService.play('SLASH');
-      addSlashEffect(targetHero.id);
+      setHitUnitId(targetHero.id);
       addDamagePopup(targetHero.id, damage);
       triggerShake('light');
 
@@ -201,7 +192,10 @@ const BattleScene: React.FC<BattleSceneProps> = ({ heroes, waves, onVictory, onD
         checkEndState(next, currentEnemies);
         return next;
       });
-      setLogs(prev => [`${enemy.name} used ${skill.name} -> ${targetHero.name}`, ...prev]);
+      
+      await new Promise(r => setTimeout(r, 350));
+      setAttackingUnitId(null);
+      setHitUnitId(null);
     }
 
     setActedHeroIds(new Set());
@@ -230,56 +224,41 @@ const BattleScene: React.FC<BattleSceneProps> = ({ heroes, waves, onVictory, onD
       {resonanceActive && (
         <ResonanceOverlay onComplete={(taps) => {
           setResonanceActive(false);
-          setResonanceCooldownTurns(15);
-          const heal = taps * 20 + 100;
+          setResonanceCooldownTurns(5); // Lowered cooldown significantly
+          const heal = taps * 50 + 500; // Much stronger heal
           setCurrentHeroes(prev => prev.map(h => h.hp > 0 ? { ...h, hp: Math.min(h.maxHp, h.hp + heal) } : h));
-          if (taps >= 10) { setStrengthBuffDuration(3); triggerShake('heavy'); soundService.play('MAGIC'); }
-          setLogs(prev => [`Resonance Success! Party restored for ${heal} HP.`, ...prev]);
+          if (taps >= 5) { setStrengthBuffDuration(5); triggerShake('heavy'); soundService.play('MAGIC'); }
         }} />
       )}
       
-      {/* Background Layer */}
-      <div className="absolute inset-0 bg-cover bg-center opacity-10 blur-2xl scale-110 void-flux" style={{ backgroundImage: 'url(https://picsum.photos/seed/void-battle-core/1920/1080)' }}></div>
+      <div className="absolute inset-0 bg-cover bg-center opacity-10 blur-2xl scale-110 void-flux" style={{ backgroundImage: 'url(https://picsum.photos/seed/v-battle/1920/1080)' }}></div>
       <div className="absolute inset-0 bg-gradient-to-b from-slate-950/90 via-transparent to-slate-950"></div>
 
-      {/* Battle Header */}
       <header className="relative z-10 flex justify-between items-center p-6 bg-slate-900/40 border-b border-white/5 backdrop-blur-xl">
         <div className="flex gap-8 items-center">
           <div className="flex flex-col">
             <h2 className="text-xl font-cinzel text-white font-black tracking-[0.3em] uppercase truncate max-w-xs">{stageName}</h2>
             <div className="flex items-center gap-2 mt-1">
-               <div className={`w-2 h-2 rounded-full ${turn === 'PLAYER' ? 'bg-emerald-500 shadow-[0_0_8px_#10b981]' : 'bg-red-500 animate-pulse shadow-[0_0_8px_#ef4444]'}`}></div>
-               <span className="text-[10px] text-slate-500 font-mono uppercase font-black tracking-widest">{turn} TURN ACTIVE</span>
+               <div className={`w-2 h-2 rounded-full ${turn === 'PLAYER' ? 'bg-emerald-500 shadow-[0_0_8px_#10b981]' : 'bg-red-500 animate-pulse'}`}></div>
+               <span className="text-[10px] text-slate-500 font-mono uppercase font-black tracking-widest">{turn} TURN</span>
             </div>
           </div>
-          <div className="glass px-5 py-2 rounded-xl flex items-center gap-3">
-             <span className="text-[9px] font-black text-violet-400 font-mono uppercase tracking-widest">WAVE</span>
-             <span className="text-xl font-mono font-bold text-white leading-none">{currentWaveIndex + 1} / {waves.length}</span>
-          </div>
         </div>
-        <div className="flex gap-3">
-           <button 
-              onClick={() => resonanceCooldownTurns === 0 && setResonanceActive(true)}
-              disabled={resonanceCooldownTurns > 0}
-              className={`px-5 py-2.5 rounded-xl text-[10px] font-black font-cinzel tracking-widest transition-all border ${resonanceCooldownTurns === 0 ? 'bg-violet-600 border-violet-400 text-white animate-pulse shadow-lg' : 'bg-slate-900 border-slate-800 text-slate-600 opacity-40'}`}
-           >
-              {resonanceCooldownTurns === 0 ? 'ACTIVATE RESONANCE' : `RECHARGING (${resonanceCooldownTurns}T)`}
-           </button>
-           <button onClick={() => setShowRetreatConfirm(true)} className="px-5 py-2.5 border border-red-900/30 text-red-500 hover:bg-red-950/20 rounded-xl text-[10px] font-black font-cinzel tracking-widest transition-all">ABORT</button>
-        </div>
+        <button onClick={() => resonanceCooldownTurns === 0 && setResonanceActive(true)} disabled={resonanceCooldownTurns > 0} className={`px-5 py-2.5 rounded-xl text-[10px] font-black font-cinzel tracking-widest border transition-all ${resonanceCooldownTurns === 0 ? 'bg-violet-600 border-violet-400 text-white animate-pulse shadow-[0_0_20px_rgba(139,92,246,0.5)]' : 'bg-slate-900 border-slate-800 text-slate-600 opacity-40'}`}>
+          {resonanceCooldownTurns === 0 ? 'VOID SURGE READY' : `RECHARGING (${resonanceCooldownTurns})`}
+        </button>
       </header>
 
-      {/* Battleground */}
       <div className="flex-1 relative z-10 flex flex-col md:flex-row items-center justify-center gap-12 p-8 overflow-y-auto custom-scrollbar">
         
-        {/* Enemies side */}
-        <div className="flex flex-row md:flex-col gap-8 justify-center items-center">
+        {/* Enemies */}
+        <div className="flex flex-row md:flex-col gap-10 justify-center items-center">
           {currentEnemies.map((enemy) => (
-            <div key={enemy.id} className={`relative flex flex-col md:flex-row-reverse items-center gap-4 transition-all duration-700 ${enemy.hp <= 0 ? 'opacity-20 grayscale scale-90' : ''}`}>
-              <div className="w-20 h-20 md:w-32 md:h-32 rounded-[2.5rem] overflow-hidden border-2 border-red-500/20 shadow-2xl relative bg-slate-950 group">
-                <img src={enemy.sprite} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+            <div key={enemy.id} className={`relative flex flex-col md:flex-row-reverse items-center gap-6 transition-all duration-500 ${enemy.hp <= 0 ? 'opacity-20 grayscale scale-90' : 'animate-unit-idle'}`}>
+              <div className={`w-28 h-28 md:w-36 md:h-36 rounded-[2.5rem] overflow-hidden border-2 border-red-500/20 shadow-2xl relative bg-slate-950 transition-transform ${attackingUnitId === enemy.id ? 'lunge-enemy' : ''} ${hitUnitId === enemy.id ? 'animate-hit' : ''}`}>
+                <img src={enemy.sprite} className="w-full h-full object-cover" />
                 {damageEvents.filter(e => e.unitId === enemy.id).map(e => (
-                   <div key={e.id} className={`damage-popup absolute inset-0 flex items-center justify-center font-black ${e.isCrit ? 'text-amber-400 text-5xl' : 'text-white text-3xl'} drop-shadow-[0_0_10px_rgba(0,0,0,0.8)]`}>
+                   <div key={e.id} className={`damage-popup absolute inset-0 flex items-center justify-center font-black drop-shadow-lg ${e.isCrit ? 'text-amber-400 text-6xl' : 'text-white text-4xl'}`}>
                      {e.value < 0 ? `+${Math.abs(e.value)}` : `-${e.value}`}
                    </div>
                 ))}
@@ -287,37 +266,27 @@ const BattleScene: React.FC<BattleSceneProps> = ({ heroes, waves, onVictory, onD
               <div className="w-24 md:w-56 text-center md:text-right">
                 <div className="mb-2">
                   <span className="text-[10px] font-black text-red-400 font-mono uppercase truncate block">{enemy.name}</span>
-                  <span className="text-[8px] font-mono text-slate-500">{Math.ceil(enemy.hp).toLocaleString()} / {enemy.maxHp.toLocaleString()}</span>
-                </div>
-                <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden border border-red-900/10">
-                  <div className="h-full bg-gradient-to-l from-red-600 to-red-900 transition-all duration-700" style={{ width: `${(enemy.hp / enemy.maxHp) * 100}%` }}></div>
+                  <div className="h-2 w-full bg-black/40 rounded-full mt-1.5 overflow-hidden border border-white/5">
+                    <div className="h-full bg-gradient-to-r from-red-800 to-red-500 transition-all duration-700" style={{ width: `${(enemy.hp / enemy.maxHp) * 100}%` }}></div>
+                  </div>
                 </div>
               </div>
             </div>
           ))}
         </div>
 
-        {/* Dynamic Center Stage */}
-        <div className="hidden md:flex flex-col items-center justify-center w-24 h-24 rounded-full border border-white/5 bg-slate-900/20 relative">
-          <div className="absolute inset-0 rounded-full border-2 border-dashed border-violet-500/10 animate-[spin_15s_linear_infinite]"></div>
-          {strengthBuffDuration > 0 ? (
-            <div className="flex flex-col items-center animate-bounce text-violet-400">
-               <i className="fas fa-bolt-auto text-3xl"></i>
-               <span className="text-[8px] font-black font-mono">BUFF: {strengthBuffDuration}T</span>
-            </div>
-          ) : (
-            <span className="text-slate-700 font-cinzel font-black text-lg">VS</span>
-          )}
+        <div className="hidden md:flex flex-col items-center justify-center w-24 h-24">
+          <div className="text-slate-700 font-cinzel font-black text-2xl animate-pulse">VS</div>
         </div>
 
-        {/* Heroes side */}
-        <div className="flex flex-row md:flex-col gap-8 justify-center items-center">
+        {/* Heroes */}
+        <div className="flex flex-row md:flex-col gap-10 justify-center items-center">
           {currentHeroes.map((hero) => (
-            <div key={hero.id} className={`relative flex flex-col md:flex-row items-center gap-4 transition-all duration-700 ${hero.hp <= 0 ? 'opacity-20 grayscale scale-90' : activeHeroId === hero.id ? 'scale-110' : ''}`}>
-              <div className={`w-20 h-20 md:w-28 md:h-28 rounded-[2rem] overflow-hidden border-2 transition-all duration-500 relative bg-slate-950 ${activeHeroId === hero.id ? 'border-violet-500 shadow-[0_0_30px_rgba(139,92,246,0.3)]' : 'border-slate-800 opacity-60'}`}>
+            <div key={hero.id} className={`relative flex flex-col md:flex-row items-center gap-6 transition-all duration-500 ${hero.hp <= 0 ? 'opacity-20 grayscale scale-90' : activeHeroId === hero.id ? 'scale-110' : ''}`}>
+              <div className={`w-28 h-28 md:w-36 md:h-36 rounded-[2rem] overflow-hidden border-2 transition-all duration-500 relative bg-slate-950 shadow-2xl ${activeHeroId === hero.id ? 'border-violet-500 shadow-[0_0_40px_rgba(139,92,246,0.4)]' : 'border-slate-800 opacity-80'} ${attackingUnitId === hero.id ? 'lunge-player' : ''} ${hitUnitId === hero.id ? 'animate-hit' : ''} animate-unit-idle`}>
                 <img src={hero.sprite} className="w-full h-full object-cover" />
                 {damageEvents.filter(e => e.unitId === hero.id).map(e => (
-                   <div key={e.id} className={`damage-popup absolute inset-0 flex items-center justify-center font-black ${e.value < 0 ? 'text-emerald-400 text-4xl' : 'text-red-500 text-3xl'} drop-shadow-[0_0_10px_rgba(0,0,0,0.8)]`}>
+                   <div key={e.id} className={`damage-popup absolute inset-0 flex items-center justify-center font-black drop-shadow-lg ${e.value < 0 ? 'text-emerald-400 text-5xl' : 'text-red-500 text-4xl'}`}>
                       {e.value < 0 ? `+${Math.abs(e.value)}` : `-${e.value}`}
                    </div>
                 ))}
@@ -325,10 +294,9 @@ const BattleScene: React.FC<BattleSceneProps> = ({ heroes, waves, onVictory, onD
               <div className="w-24 md:w-48 text-center md:text-left">
                 <div className="mb-2">
                   <span className="text-[10px] font-black text-white font-mono uppercase truncate block">{hero.name}</span>
-                  <span className="text-[8px] font-mono text-slate-500">{Math.ceil(hero.hp).toLocaleString()} / {hero.maxHp.toLocaleString()}</span>
-                </div>
-                <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden border border-slate-800">
-                  <div className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-700" style={{ width: `${(hero.hp / hero.maxHp) * 100}%` }}></div>
+                  <div className="h-2 w-full bg-black/40 rounded-full mt-1.5 overflow-hidden border border-white/5">
+                    <div className="h-full bg-gradient-to-r from-emerald-700 to-emerald-400 transition-all duration-700" style={{ width: `${(hero.hp / hero.maxHp) * 100}%` }}></div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -336,22 +304,10 @@ const BattleScene: React.FC<BattleSceneProps> = ({ heroes, waves, onVictory, onD
         </div>
       </div>
 
-      {/* Combat HUD Footer */}
-      <footer className="relative z-20 flex flex-col md:grid md:grid-cols-12 bg-slate-900 border-t border-white/5 md:h-48 backdrop-blur-3xl">
-        
-        {/* Mobile Log Controls */}
-        <button 
-           onClick={() => setShowLogsMobile(!showLogsMobile)}
-           className="md:hidden w-full py-2 bg-black/40 flex items-center justify-center gap-3 text-[9px] font-black font-cinzel text-slate-500 uppercase tracking-widest"
-        >
-           <i className={`fas ${showLogsMobile ? 'fa-chevron-down' : 'fa-chevron-up'}`}></i>
-           {showLogsMobile ? 'Minimize Intel' : 'Expand Intel'}
-        </button>
-
-        <div className={`${showLogsMobile ? 'h-40' : 'h-0'} md:h-full md:col-span-4 p-5 md:p-8 border-b md:border-b-0 md:border-r border-white/5 overflow-y-auto custom-scrollbar flex flex-col-reverse transition-all duration-300`}>
-          {logs.map((log, i) => (
-            <div key={i} className={`text-[10px] py-2 border-b border-white/5 font-mono ${i === 0 ? 'text-violet-400 font-bold' : 'text-slate-600 opacity-60'}`}>
-              <span className="opacity-20 mr-3">[{new Date().toLocaleTimeString([], { second: '2-digit' })}]</span>
+      <footer className="relative z-20 flex flex-col md:grid md:grid-cols-12 bg-slate-900 border-t border-white/5 md:h-52 backdrop-blur-3xl">
+        <div className="md:col-span-4 p-5 md:p-8 border-b md:border-b-0 md:border-r border-white/5 overflow-y-auto custom-scrollbar flex flex-col-reverse bg-black/20">
+          {logs.slice(0, 10).map((log, i) => (
+            <div key={i} className={`text-[10px] py-1.5 font-mono ${i === 0 ? 'text-violet-400 font-bold' : 'text-slate-600'}`}>
               {log}
             </div>
           ))}
@@ -359,73 +315,40 @@ const BattleScene: React.FC<BattleSceneProps> = ({ heroes, waves, onVictory, onD
 
         <div className="md:col-span-8 p-6 md:p-10 flex flex-col justify-center bg-gradient-to-r from-slate-900/50 to-transparent">
           {turn === 'PLAYER' && activeHero ? (
-            <div className="flex flex-col md:flex-row gap-10 items-center">
-              <div className="flex flex-col items-center md:items-start w-full md:w-48 flex-shrink-0">
-                <span className="text-[10px] font-black text-violet-500 uppercase tracking-[0.4em] font-mono mb-2">MANIFESTING</span>
-                <span className="text-2xl font-cinzel text-white font-black truncate text-glow">{activeHero.name}</span>
-              </div>
-              <div className="grid grid-cols-2 lg:flex gap-4 w-full">
-                {activeHero.skills.filter(s => s.unlocked).map((skill, idx) => (
-                  <button 
-                    key={idx}
-                    onClick={() => {
-                      const target = skill.type === 'HEAL' ? activeHero : currentEnemies.find(e => e.hp > 0);
-                      if (target) handleActionClick(skill, target);
-                    }}
-                    className="group relative flex-1 px-6 py-4 bg-slate-950/60 border border-slate-800 rounded-2xl hover:border-violet-500 hover:bg-violet-900/20 transition-all flex flex-col items-start overflow-hidden active:scale-95 shadow-xl"
-                  >
-                    <span className="text-[10px] font-black font-cinzel text-white group-hover:text-violet-400 transition-colors uppercase truncate mb-1">
-                      {skill.name}
-                    </span>
-                    <div className="flex justify-between w-full items-center">
-                       <span className="text-[8px] text-slate-600 font-mono font-bold tracking-widest uppercase">POWER: {skill.power}</span>
-                       <i className={`fas ${skill.type === 'HEAL' ? 'fa-heart text-emerald-500' : 'fa-bolt text-violet-500'} text-[10px] opacity-40 group-hover:opacity-100 transition-opacity`}></i>
-                    </div>
-                    <div className="absolute inset-x-0 bottom-0 h-0.5 bg-violet-600/20 group-hover:bg-violet-600 transition-all"></div>
-                  </button>
-                ))}
-              </div>
+            <div className="flex gap-5 w-full overflow-x-auto no-scrollbar pb-2">
+              {activeHero.skills.filter(s => s.unlocked).map((skill, idx) => (
+                <button key={idx} onClick={() => {
+                    const target = skill.type === 'HEAL' ? activeHero : currentEnemies.find(e => e.hp > 0);
+                    if (target) handleActionClick(skill, target);
+                  }}
+                  className="group relative flex-1 min-w-[160px] px-8 py-5 bg-slate-950 border border-slate-800 rounded-3xl hover:border-violet-500 hover:scale-105 transition-all flex flex-col items-start active:scale-95 shadow-2xl hover:bg-violet-950/20"
+                >
+                  <span className="text-xs font-black font-cinzel text-white uppercase truncate mb-1.5 tracking-widest">{skill.name}</span>
+                  <div className="flex justify-between w-full items-center">
+                     <span className="text-[9px] text-slate-500 font-mono font-bold">POW {skill.power}</span>
+                     <div className="flex items-center gap-2">
+                        <i className={`fas ${skill.type === 'HEAL' ? 'fa-heart text-emerald-500' : 'fa-bolt text-violet-500'} text-xs opacity-60 group-hover:opacity-100 group-hover:scale-125 transition-all`}></i>
+                     </div>
+                  </div>
+                  <div className="absolute inset-0 bg-violet-500/5 opacity-0 group-hover:opacity-100 transition-opacity rounded-3xl"></div>
+                </button>
+              ))}
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center w-full h-full gap-3">
-               <div className="w-12 h-1 bg-slate-800 rounded-full overflow-hidden">
-                  <div className="h-full bg-red-600 animate-[loading_1.5s_infinite]"></div>
+            <div className="flex flex-col items-center justify-center gap-3">
+               <div className="text-slate-600 font-cinzel text-xs tracking-[0.8em] uppercase font-black animate-pulse">Neural Recalibration</div>
+               <div className="w-48 h-1 bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-red-500/40 animate-[loading_1.5s_infinite]"></div>
                </div>
-               <div className="text-slate-600 font-cinzel text-[10px] tracking-[0.5em] uppercase font-black animate-pulse">Calculating Void Resistance...</div>
             </div>
           )}
         </div>
       </footer>
-
-      {showRetreatConfirm && (
-        <div className="fixed inset-0 z-[300] bg-black/95 backdrop-blur-2xl flex items-center justify-center p-6 animate-in fade-in duration-500">
-           <div className="glass p-12 rounded-[3rem] border-red-500/30 max-w-sm text-center shadow-[0_0_100px_rgba(239,68,68,0.2)]">
-              <i className="fas fa-person-running text-red-500 text-5xl mb-8 animate-bounce"></i>
-              <h3 className="text-3xl font-cinzel text-white mb-4 uppercase font-black">Withdraw?</h3>
-              <p className="text-slate-400 text-sm mb-10 italic leading-relaxed">"The singularity claims 500 Essence for failed expeditions. Return to Map?"</p>
-              <div className="flex flex-col gap-4">
-                 <button 
-                   onClick={() => shards >= retreatCost ? onRetreat() : setShowRetreatConfirm(false)} 
-                   className="w-full py-5 bg-red-600 hover:bg-red-500 text-white font-black font-cinzel rounded-2xl transition-all shadow-xl active:scale-95 uppercase tracking-widest"
-                 >
-                   Confirm Withdraw
-                 </button>
-                 <button 
-                   onClick={() => setShowRetreatConfirm(false)}
-                   className="w-full py-5 border border-slate-700 text-slate-500 hover:text-white font-black font-cinzel rounded-2xl transition-all active:scale-95 uppercase tracking-widest"
-                 >
-                   Stay and Fight
-                 </button>
-              </div>
-           </div>
-        </div>
-      )}
-
       <style>{`
         @keyframes loading {
-          0% { width: 0; margin-left: 0; }
-          50% { width: 100%; margin-left: 0; }
-          100% { width: 0; margin-left: 100%; }
+          0% { width: 0; transform: translateX(0); }
+          50% { width: 100%; transform: translateX(0); }
+          100% { width: 0; transform: translateX(100%); }
         }
       `}</style>
     </div>
